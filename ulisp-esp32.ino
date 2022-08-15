@@ -2302,10 +2302,12 @@ object *sp_defmacro (object *args, object *env) {
 
 object *reverse_it (object *l) {
   object *reversed = NULL;
+  push(reversed, GCStack);
   while (l != NULL) {
     push(first(l),reversed);
     l = cdr(l);
   }
+  pop(GCStack);
   return reversed;
 }
 
@@ -2316,6 +2318,7 @@ object *reverse_and_flatten (object *expr) {
   object *reversed = reverse_it(expr);
 
   object *result = NULL;
+  push(result, GCStack);
   for (object *cell = reversed; cell != NULL; cell = cdr(cell)) {
     if (!consp(car(cell))) {
       push(car(cell), result);
@@ -2325,6 +2328,7 @@ object *reverse_and_flatten (object *expr) {
       }
     }
   }
+  pop(GCStack);
   return reverse_it(result);
 }
 
@@ -2381,9 +2385,10 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     // Serial.print("**** At level ");
     // Serial.println(level);
     object *parts = NULL;
+    push(parts, GCStack);
     for (object *cell = expr; cell != NULL; cell = cdr(cell)) {
       object *processed = process_quasiquoted(car(cell), level, env);
-      if (processed != ATNOTHINGS) { // Check for empty list insertion sentinal
+      if (processed != ATNOTHINGS) { // Check for empty list insertion sentinel
         push(processed, parts);
       }
     }
@@ -2395,6 +2400,7 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     // Serial.print("**** Result: ");
     // printobject(result, pserial);
     // Serial.println();
+    pop(GCStack);
     return cons(result, NULL);
   }
 
@@ -2420,8 +2426,7 @@ object *sp_unquote_splicing (object *args, object *env) {
 }
 
 object *expand (object *body, object *env) {
-  object *expanded = eval(body, env);
-  return expanded;
+  return eval(body, env);
 }
 
 //MOVE arg evaluation to sp_expand
