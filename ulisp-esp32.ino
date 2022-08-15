@@ -2,35 +2,48 @@
    David Johnson-Davies - www.technoblogy.com - 18th May 2022
 
    Licensed under the MIT license: https://opensource.org/licenses/MIT
+
+   Patches from original:
+   * Deleted all code not for ESP32 specifically (shorter and easier to maintain)
+   * Run-from-SD on startup
+   * Different printgcs message
+   * Used actual name instead of 'stringNNN' in lookup table
+   * Goheeca and Max-Gerd Retzlaff's error-handling code (https://github.com/Goheeca/redbear_duo-uLisp/commit/4894c13 and http://forum.ulisp.com/t/error-handling-in-ulisp/691/7), but replaced sp_error with fn_throw (sp_error caused a segfault)
+   * Dave Astels' macro, intern, and generic :keyword support (http://forum.ulisp.com/t/ive-added-a-few-things-that-might-be-interesting/456)
+   
+   New custom functions:
+   * battery:voltage, battery:percentage, battery:change-rate (reading from the MAX17048 on a Thing Plus C)
+   
 */
 
 // Lisp Library
-const char LispLibrary[] PROGMEM = "";
+// const char LispLibrary[] PROGMEM = "";
+#include "LispLibrary.h"
 
 // Compile options
 
 // #define resetautorun
 #define printfreespace
-// #define printgcs
-// #define sdcardsupport
+#define printgcs
+#define sdcardsupport
+#define runfromsd
 // #define gfxsupport
 // #define lisplibrary
 // #define lineeditor
 // #define vt100
 
 // Includes
-
-// #include "LispLibrary.h"
+#include <SparkFun_MAX1704x_Fuel_Gauge_Arduino_Library.h>
 #include <setjmp.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <limits.h>
 #include <EEPROM.h>
-#if defined (ESP8266)
-  #include <ESP8266WiFi.h>
-#elif defined (ESP32)
   #include <WiFi.h>
-#endif
+  #include <analogWrite.h>
+  #include <ESP32Tone.h>
+  #include <ESP32PWM.h>
+
 
 #if defined(gfxsupport)
 #include <Adafruit_GFX.h>    // Core graphics library
@@ -53,93 +66,27 @@ Adafruit_SSD1306 tft(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 // Platform specific settings
 
 #define WORDALIGNED __attribute__((aligned (4)))
-#define BUFFERSIZE 36  // Number of bits+4
+#define BUFFERSIZE 260  // Number of bits+4
 
-#if defined(ESP8266)
-  #define WORKSPACESIZE (4000-SDSIZE)     /* Cells (8*bytes) */
-  #define EEPROMSIZE 4096                 /* Bytes available for EEPROM */
-  #define SDCARD_SS_PIN 10
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_FEATHER_ESP32)
-  #define WORKSPACESIZE (9216-SDSIZE)     /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32S2)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32C3)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_FEATHERS2)          /* UM FeatherS2 */
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32S2_DEV)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32C3_DEV)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32S3_DEV)
-  #define WORKSPACESIZE (22000-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ESP32)
-  #define WORKSPACESIZE (9216-SDSIZE)     /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#else
-#error "Board not supported!"
+#if !defined(autorunimagepath)
+#define autorunimagepath "/ULISP.IMG"
 #endif
+
+#if !defined(sdmainfile)
+#define sdmainfile "main.lisp"
+#endif
+
+  #if !defined(WORKSPACESIZE)
+    #define WORKSPACESIZE (9216-SDSIZE)     /* Cells (8*bytes) */
+  #endif
+  #define LITTLEFS
+  #include "FS.h"
+  #include <LittleFS.h>
+  #if !defined(analogWrite)
+    #define analogWrite(x,y) dacWrite((x), (y))
+  #endif
+  #define SDCARD_SS_PIN 13
+  #define LED_BUILTIN 13
 
 // C Macros
 
@@ -183,7 +130,7 @@ Adafruit_SSD1306 tft(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire);
 
 const int TRACEMAX = 3; // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
-enum token { UNUSED, BRA, KET, QUO, DOT };
+enum token { UNUSED, BRA, KET, QUO, DOT, BACKTICK, COMMA, COMMAAT };
 enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM };
 
 // Stream names used by printobject
@@ -231,10 +178,16 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET,
-LETSTAR, CLOSURE, PSTAR, SPECIAL_FORMS, QUOTE, OR, DEFUN, DEFVAR, SETQ, LOOP, RETURN, PUSH, POP, INCF,
+LETSTAR, CLOSURE, PSTAR,
+SPECIAL_FORMS,
+QUOTE, OR, DEFUN, DEFVAR, SETQ, LOOP, RETURN, PUSH, POP, INCF,
 DECF, SETF, DOLIST, DOTIMES, TRACE, UNTRACE, FORMILLIS, TIME, WITHOUTPUTTOSTRING, WITHSERIAL, WITHI2C,
-WITHSPI, WITHSDCARD, WITHGFX, WITHCLIENT, TAIL_FORMS, PROGN, IF, COND, WHEN, UNLESS, CASE, AND, FUNCTIONS,
-NOT, NULLFN, CONS, ATOM, LISTP, CONSP, SYMBOLP, ARRAYP, BOUNDP, SETFN, STREAMP, EQ, CAR, FIRST, CDR, REST,
+WITHSPI, WITHSDCARD, WITHGFX, WITHCLIENT, UNWINDPROTECT, IGNOREERRORS, /*SP_ERROR,*/
+MACRO, DEFMACRO, QUASIQUOTE, UNQUOTE, UNQUOTESPLICING, EXPAND,
+TAIL_FORMS,
+PROGN, IF, COND, WHEN, UNLESS, CASE, AND,
+FUNCTIONS,
+GETERROR, THROW, INTERN, NOT, NULLFN, CONS, ATOM, LISTP, CONSP, SYMBOLP, ARRAYP, BOUNDP, SETFN, STREAMP, EQ, EQUAL, CAR, FIRST, CDR, REST,
 CAAR, CADR, SECOND, CDAR, CDDR, CAAAR, CAADR, CADAR, CADDR, THIRD, CDAAR, CDADR, CDDAR, CDDDR, LENGTH,
 ARRAYDIMENSIONS, LIST, MAKEARRAY, REVERSE, NTH, AREF, ASSOC, MEMBER, APPLY, FUNCALL, APPEND, MAPC, MAPCAR,
 MAPCAN, ADD, SUBTRACT, MULTIPLY, DIVIDE, MOD, ONEPLUS, ONEMINUS, ABS, RANDOM, MAXFN, MINFN, NOTEQ, NUMEQ,
@@ -248,20 +201,24 @@ DIGITALWRITE, ANALOGREAD, ANALOGREADRESOLUTION, ANALOGWRITE, DELAY, MILLIS, SLEE
 PPRINTALL, FORMAT, REQUIRE, LISTLIBRARY, AVAILABLE, WIFISERVER, WIFISOFTAP, CONNECTED, WIFILOCALIP,
 WIFICONNECT, DRAWPIXEL, DRAWLINE, DRAWRECT, FILLRECT, DRAWCIRCLE, FILLCIRCLE, DRAWROUNDRECT,
 FILLROUNDRECT, DRAWTRIANGLE, FILLTRIANGLE, DRAWCHAR, SETCURSOR, SETTEXTCOLOR, SETTEXTSIZE, SETTEXTWRAP,
-FILLSCREEN, SETROTATION, INVERTDISPLAY, KEYWORDS, 
+FILLSCREEN, SETROTATION, INVERTDISPLAY,
+KEYWORDS, 
 K_LED_BUILTIN, K_HIGH, K_LOW,
-#if defined(ESP8266)
-K_INPUT, K_INPUT_PULLUP, K_OUTPUT,
-#elif defined(ESP32)
 K_INPUT, K_INPUT_PULLUP, K_INPUT_PULLDOWN, K_OUTPUT,
-#endif
-USERFUNCTIONS, ENDFUNCTIONS, SET_SIZE = INT_MAX };
+USERFUNCTIONS,
+// Insert your own enum entries here
+BATTERYVOLTAGE, BATTERYPERCENTAGE, BATTERYCHANGERATE,
+
+
+ENDFUNCTIONS, SET_SIZE = INT_MAX };
 
 // Global variables
+SFE_MAX1704X battery(MAX1704X_MAX17048);
 
 object Workspace[WORKSPACESIZE] WORDALIGNED;
 
-jmp_buf exception;
+jmp_buf toplevel_errorbuffer;
+jmp_buf *errorbuffer = &toplevel_errorbuffer;
 unsigned int Freespace = 0;
 object *Freelist;
 unsigned int I2CCount;
@@ -270,7 +227,9 @@ unsigned int TraceDepth[TRACEMAX];
 
 object *GlobalEnv;
 object *GCStack = NULL;
+object *NeverGC = NULL;
 object *GlobalString;
+object *GlobalErrorString;
 object *GlobalStringTail;
 int GlobalStringIndex = 0;
 uint8_t PrintCount = 0;
@@ -279,34 +238,67 @@ char LastChar = 0;
 char LastPrint = 0;
 
 // Flags
-enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO };
+enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS };
 volatile uint8_t Flags = 0b00001; // PRINTREADABLY set by default
 
 // Forward references
 object *tee;
 void pfstring (PGM_P s, pfun_t pfun);
+object *apply (object *function, object *args, object **env);
+int glibrary ();
+int gserial ();
+boolean listp (object *x);
+uint8_t nthchar (object *string, int n);
+uint8_t getminmax (builtin_t name);
+void checkminmax (builtin_t name, int nargs);
+void pfl (pfun_t pfun);
+inline void pln (pfun_t pfun);
+void pint (int i, pfun_t pfun);
+void printstring (object *form, pfun_t pfun);
+void pserial (char c);
+void pstring (char *s, pfun_t pfun);
+void superprint (object *form, int lm, pfun_t pfun);
+void supersub (object *form, int lm, int super, pfun_t pfun);
+void testescape ();
+object *read (gfun_t gfun);
+object *edit (object *fun);
 
 // Error handling
 
-void errorsub (symbol_t fname, PGM_P string) {
-  pfl(pserial); pfstring(PSTR("Error: "), pserial);
-  if (fname != sym(NIL)) {
-    pserial('\'');
-    psymbol(fname, pserial);
-    pserial('\''); pserial(' ');
+object *errorsub (symbol_t fname, PGM_P string) {
+  if (!tstflag(MUFFLEERRORS)) {
+    pfl(pserial); pfstring(PSTR("Error: "), pserial);
+    if (fname != sym(NIL)) {
+      pserial('\'');
+      psymbol(fname, pserial);
+      pserial('\''); pserial(' ');
+    }
+    pfstring(string, pserial);
   }
-  pfstring(string, pserial);
+  object *obj = startstring(/*SP_ERROR*/THROW);
+  if (fname != sym(NIL)) {
+    pstr('\'');
+    psymbol(fname, pstr);
+    pstr('\''); pstr(' ');
+  }
+  pfstring(string, pstr); // copy to GlobalString
+  return obj;
 }
 
 void errorsym (symbol_t fname, PGM_P string, object *symbol) {
-  errorsub(fname, string);
-  pserial(':'); pserial(' ');
-  printobject(symbol, pserial);
+  object *obj = errorsub(fname, string);
+  if (!tstflag(MUFFLEERRORS)) {
+    pserial(':'); pserial(' ');
+    printobject(symbol, pserial);
+  }
+  pstr(':'); pstr(' ');
+  printobject(symbol, pstr);
+  GlobalErrorString = obj;
   errorend();
 }
 
 void errorsym2 (symbol_t fname, PGM_P string) {
-  errorsub(fname, string);
+  GlobalErrorString = errorsub(fname, string);
   errorend();
 }
 
@@ -318,7 +310,11 @@ void error2 (builtin_t fname, PGM_P string) {
   errorsym2(sym(fname), string);
 }
 
-void errorend () { pln(pserial); GCStack = NULL; longjmp(exception, 1); }
+void errorend () {
+  if (!tstflag(MUFFLEERRORS)) pln(pserial);
+  GCStack = NULL;
+  longjmp(*errorbuffer, 1);
+}
 
 // Save space as these are used multiple times
 const char notanumber[] PROGMEM = "argument is not a number";
@@ -356,7 +352,7 @@ void initworkspace () {
 }
 
 object *myalloc () {
-  if (Freespace == 0) error2(NIL, PSTR("no room"));
+  if (Freespace == 0) error2(NIL, PSTR("out of memory"));
   object *temp = Freelist;
   Freelist = cdr(Freelist);
   Freespace--;
@@ -496,6 +492,10 @@ void sweep () {
   }
 }
 
+#if defined(printgcs)
+unsigned int GCCount = 0;
+#endif
+
 void gc (object *form, object *env) {
   #if defined(printgcs)
   int start = Freespace;
@@ -503,11 +503,14 @@ void gc (object *form, object *env) {
   markobject(tee);
   markobject(GlobalEnv);
   markobject(GCStack);
+  markobject(NeverGC);
   markobject(form);
   markobject(env);
+  markobject(GlobalErrorString);
   sweep();
   #if defined(printgcs)
-  pfl(pserial); pserial('{'); pint(Freespace - start, pserial); pserial('}');
+  pfl(pserial); pfstring(PSTR("{GC"), pserial); pint(++GCCount, pserial); pfstring(PSTR(": +"), pserial); pint(Freespace - start, pserial); pserial('}'); pfl(pserial);
+  //pfl(pserial); pserial('{'); pint(Freespace - start, pserial); pserial('}');
   #endif
 }
 
@@ -619,12 +622,13 @@ int EpromReadInt (int *addr) {
 unsigned int saveimage (object *arg) {
 #if defined(sdcardsupport)
   unsigned int imagesize = compactimage(&arg);
-  SD.begin(SDCARD_SS_PIN);
+  SD.begin();
   File file;
   if (stringp(arg)) {
-    file = SD.open(MakeFilename(arg), FILE_WRITE);
+    char buffer[BUFFERSIZE];
+    file = SD.open(MakeFilename(arg, buffer), FILE_WRITE);
     arg = NULL;
-  } else if (arg == NULL || listp(arg)) file = SD.open("/ULISP.IMG", FILE_WRITE);
+  } else if (arg == NULL || listp(arg)) file = SD.open(autorunimagepath, FILE_WRITE);
   else error(SAVEIMAGE, PSTR("illegal argument"), arg);
   if (!file) error2(SAVEIMAGE, PSTR("problem saving to SD card"));
   SDWriteInt(file, (uintptr_t)arg);
@@ -648,7 +652,7 @@ unsigned int saveimage (object *arg) {
     if (!file) error2(SAVEIMAGE, PSTR("problem saving to LittleFS or invalid filename"));
     arg = NULL;
   } else if (arg == NULL || listp(arg)) {
-    file = LittleFS.open("/ULISP.IMG", "w");
+    file = LittleFS.open(autorunimagepath, "w");
     if (!file) error2(SAVEIMAGE, PSTR("problem saving to LittleFS"));
   } else error(SAVEIMAGE, invalidarg, arg);
   FSWrite32(file, (uintptr_t)arg);
@@ -689,10 +693,11 @@ unsigned int saveimage (object *arg) {
 
 unsigned int loadimage (object *arg) {
 #if defined(sdcardsupport)
-  SD.begin(SDCARD_SS_PIN);
+  SD.begin();
   File file;
-  if (stringp(arg)) file = SD.open(MakeFilename(arg));
-  else if (arg == NULL) file = SD.open("/ULISP.IMG");
+  char buffer[BUFFERSIZE];
+  if (stringp(arg)) file = SD.open(MakeFilename(arg, buffer));
+  else if (arg == NULL) file = SD.open(autorunimagepath);
   else error(LOADIMAGE, PSTR("illegal argument"), arg);
   if (!file) error2(LOADIMAGE, PSTR("problem loading from SD card"));
   SDReadInt(file);
@@ -716,7 +721,7 @@ unsigned int loadimage (object *arg) {
     if (!file) error2(LOADIMAGE, PSTR("problem loading from LittleFS or invalid filename"));
   }
   else if (arg == NULL) {
-    file = LittleFS.open("/ULISP.IMG", "r");
+    file = LittleFS.open(autorunimagepath, "r");
     if (!file) error2(LOADIMAGE, PSTR("problem loading from LittleFS"));
   }
   else error(LOADIMAGE, invalidarg, arg);
@@ -757,9 +762,9 @@ unsigned int loadimage (object *arg) {
 
 void autorunimage () {
 #if defined(sdcardsupport)
-  SD.begin(SDCARD_SS_PIN);
-  File file = SD.open("/ULISP.IMG");
-  if (!file) error2(NIL, PSTR("problem autorunning from SD card"));
+  SD.begin();
+  File file = SD.open(autorunimagepath);
+  if (!file) error2(NIL, PSTR("problem autorunning from SD card image"));
   object *autorun = (object *)SDReadInt(file);
   file.close();
   if (autorun != NULL) {
@@ -768,7 +773,7 @@ void autorunimage () {
   }
 #elif defined(LITTLEFS)
   if (!LittleFS.begin()) error2(NIL, PSTR("problem mounting LittleFS"));
-  File file = LittleFS.open("/ULISP.IMG", "r");
+  File file = LittleFS.open(autorunimagepath, "r");
   if (!file) error2(NIL, PSTR("problem autorunning from LittleFS"));
   object *autorun = (object *)FSRead32(file);
   file.close();
@@ -954,6 +959,23 @@ int eq (object *arg1, object *arg2) {
   if (integerp(arg1) && integerp(arg2)) return true;  // Same integer
   if (floatp(arg1) && floatp(arg2)) return true; // Same float
   if (characterp(arg1) && characterp(arg2)) return true;  // Same character
+  return false;
+}
+
+int equal (object *arg1, object *arg2) {
+  if (eq(arg1, arg2)) return true;
+  if (stringp(arg1) && stringp(arg2)) {
+    object *args = cons(arg1, cons(arg2, nil));
+    return stringcompare(EQUAL, args, false, false, true);
+  }
+  if (consp(arg1) && consp(arg2)) {
+    while (arg1 != nil && arg2 != nil) {
+      if (!equal(car(arg1), car(arg2))) return false;
+      arg1 = cdr(arg1);
+      arg2 = cdr(arg2);
+    }
+    return arg1 == nil && arg2 == nil;
+  }
   return false;
 }
 
@@ -1589,50 +1611,19 @@ pfun_t pstreamfun (object *args) {
 // Check pins
 
 void checkanalogread (int pin) {
-#if defined(ESP8266)
-  if (pin!=17) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ESP32)
+
   if (!(pin==0 || pin==2 || pin==4 || (pin>=12 && pin<=15) || (pin>=25 && pin<=27) || (pin>=32 && pin<=36) || pin==39))
     error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_FEATHER_ESP32)
-  if (!(pin==4 || (pin>=12 && pin<=15) || (pin>=25 && pin<=27) || (pin>=32 && pin<=36) || pin==39))
-    error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2)
-  if (!(pin==8 || (pin>=14 && pin<=18))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32S2)
-  if (!((pin>=5 && pin<=9) || (pin>=16 && pin<=18))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32C3)
-  if (!((pin>=0 && pin<=1) || (pin>=3 && pin<=5))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_FEATHERS2) | defined(ARDUINO_ESP32S2_DEV)
-  if (!((pin>=1 && pin<=20))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ESP32C3_DEV)
-  if (!((pin>=0 && pin<=5))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ESP32S3_DEV)
-  if (!((pin>=1 && pin<=20))) error(ANALOGREAD, PSTR("invalid pin"), number(pin));
-#endif
+
 }
 
 void checkanalogwrite (int pin) {
-#if defined(ESP8266)
-  if (!(pin>=0 && pin<=16)) error(ANALOGWRITE, PSTR("invalid pin"), number(pin));
-#elif defined(ESP32) | defined(ARDUINO_FEATHER_ESP32)
+
   if (!(pin>=25 && pin<=26)) error(ANALOGWRITE, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2) | defined(ARDUINO_ADAFRUIT_QTPY_ESP32S2) | defined(ARDUINO_FEATHERS2) | defined(ARDUINO_ESP32S2_DEV)
-  if (!(pin>=17 && pin<=18)) error(ANALOGWRITE, PSTR("invalid pin"), number(pin));
-#elif defined(ARDUINO_ESP32C3_DEV) | defined(ARDUINO_ESP32S3_DEV) | defined(ARDUINO_ADAFRUIT_QTPY_ESP32C3)
-  error2(ANALOGWRITE, PSTR("not supported"));
-#endif
+
 }
 
 // Note
-
-void tone (int pin, int note) {
-  (void) pin, (void) note;
-}
-
-void noTone (int pin) {
-  (void) pin;
-}
 
 const int scale[] PROGMEM = {4186,4435,4699,4978,5274,5588,5920,6272,6645,7040,7459,7902};
 
@@ -1682,6 +1673,14 @@ bool quoted (object *obj) {
   return (consp(obj) && car(obj) != NULL && car(obj)->name == sym(QUOTE) && consp(cdr(obj)) && cddr(obj) == NULL);
 }
 
+bool quasiquoted (object *obj) {
+  return (consp(obj) && car(obj) != NULL && car(obj)->name == sym(QUASIQUOTE) && consp(cdr(obj)) && cddr(obj) == NULL);
+}
+
+bool macrop (object *obj) {
+  return (consp(obj) && car(obj) != NULL && car(obj)->name == sym(MACRO));
+}
+
 int subwidth (object *obj, int w) {
   if (atom(obj)) return w - atomwidth(obj);
   if (quoted(obj)) obj = car(cdr(obj));
@@ -1703,13 +1702,14 @@ void superprint (object *form, int lm, pfun_t pfun) {
     else printobject(form, pfun);
   }
   else if (quoted(form)) { pfun('\''); superprint(car(cdr(form)), lm + 1, pfun); }
+  else if (quasiquoted(form)) { pfun('`'); superprint(car(cdr(form)), lm + 1, pfun); }
   else if (subwidth(form, ppwidth - lm) >= 0) supersub(form, lm + PPINDENT, 0, pfun);
   else supersub(form, lm + PPINDENT, 1, pfun);
 }
 
-const int ppspecials = 16;
+const int ppspecials = 19;
 const char ppspecial[ppspecials] PROGMEM =
-  { DOTIMES, DOLIST, IF, SETQ, TEE, LET, LETSTAR, LAMBDA, WHEN, UNLESS, WITHI2C, WITHSERIAL, WITHSPI, WITHSDCARD, FORMILLIS, WITHCLIENT };
+  { DOTIMES, DOLIST, IF, SETQ, TEE, LET, LETSTAR, LAMBDA, WHEN, UNLESS, WITHI2C, WITHSERIAL, WITHSPI, WITHSDCARD, FORMILLIS, WITHCLIENT, UNWINDPROTECT, IGNOREERRORS/*, SP_ERROR*/ };
 
 void supersub (object *form, int lm, int super, pfun_t pfun) {
   int special = 0, separate = 1;
@@ -2151,7 +2151,6 @@ object *sp_withspi (object *args, object *env) {
 }
 
 object *sp_withsdcard (object *args, object *env) {
-#if defined(sdcardsupport)
   object *params = first(args);
   object *var = first(params);
   object *filename = eval(second(params), env);
@@ -2176,11 +2175,6 @@ object *sp_withsdcard (object *args, object *env) {
   object *result = eval(tf_progn(forms,env), env);
   if (mode >= 1) SDpfile.close(); else SDgfile.close();
   return result;
-#else
-  (void) args, (void) env;
-  error2(WITHSDCARD, PSTR("not supported"));
-  return nil;
-#endif
 }
 
 object *sp_withgfx (object *args, object *env) {
@@ -2225,6 +2219,253 @@ object *sp_withclient (object *args, object *env) {
   object *result = eval(tf_progn(forms,env), env);
   client.stop();
   return result;
+}
+
+object *sp_unwindprotect (object *args, object *env) {
+  checkargs(UNWINDPROTECT, args);
+  object *current_GCStack = GCStack;
+  jmp_buf dynamic_errorbuffer;
+  jmp_buf *previous_errorbuffer = errorbuffer;
+  errorbuffer = &dynamic_errorbuffer;
+  object *protected_form = first(args);
+  object *result;
+  boolean oldmuffle = tstflag(MUFFLEERRORS);
+  setflag(MUFFLEERRORS);
+  if (!setjmp(dynamic_errorbuffer)) {
+    result = eval(protected_form, env);
+    current_GCStack = NULL;
+  } else {
+    GCStack = current_GCStack;
+    errorbuffer = previous_errorbuffer;
+  }
+  if (!oldmuffle) clrflag(MUFFLEERRORS);
+  object *finally_forms = cdr(args);
+  while (finally_forms != NULL) {
+    eval(car(finally_forms),env);
+    if (tstflag(RETURNFLAG)) break;
+    finally_forms = cdr(finally_forms);
+  }
+  if (current_GCStack) longjmp(*errorbuffer, 1);
+  else return result;
+}
+
+object *sp_ignoreerrors (object *args, object *env) {
+  checkargs(IGNOREERRORS, args);
+  object *current_GCStack = GCStack;
+  jmp_buf dynamic_errorbuffer;
+  jmp_buf *previous_errorbuffer = errorbuffer;
+  errorbuffer = &dynamic_errorbuffer;
+  object *result = nil;
+  boolean oldmuffle = tstflag(MUFFLEERRORS);
+  setflag(MUFFLEERRORS);
+  if (!setjmp(dynamic_errorbuffer)) {
+    while (args != NULL) {
+      result = eval(car(args),env);
+      if (tstflag(RETURNFLAG)) break;
+      args = cdr(args);
+    }
+    current_GCStack = NULL;
+  } else {
+    GCStack = current_GCStack;
+    errorbuffer = previous_errorbuffer;
+  }
+  if (!oldmuffle) clrflag(MUFFLEERRORS);
+  if (current_GCStack) return symbol(NOTHING);
+  else return result;
+}
+
+//object *sp_error (object *args, object *env) {
+//  checkargs(SP_ERROR, args);
+//  object *message = eval(cons(symbol(FORMAT), cons(nil, args)), env);
+//  if (!tstflag(MUFFLEERRORS)) {
+//    pfstring(PSTR("Error: "), pserial); printstring(message, pserial);
+//    pln(pserial);
+//  }
+//  GlobalErrorString = message;
+//  GCStack = NULL;
+//  longjmp(*errorbuffer, 1);
+//}
+
+// Macro support
+
+object *sp_defmacro (object *args, object *env) {
+  (void) env;
+  checkargs(DEFMACRO, args);
+  object *var = first(args);
+  if (!symbolp(var)) error(DEFMACRO, notasymbol, var);
+  object *val = cons(bsymbol(MACRO), cdr(args));
+  object *pair = value(var->name,GlobalEnv);
+  if (pair != NULL) cdr(pair) = val;
+  else push(cons(var, val), GlobalEnv);
+  return var;
+}
+
+object *reverse_it (object *l) {
+  object *reversed = NULL;
+  while (l != NULL) {
+    push(first(l),reversed);
+    l = cdr(l);
+  }
+  return reversed;
+}
+
+object *reverse_and_flatten (object *expr) {
+  if (!consp(expr))
+    return expr;
+  
+  object *reversed = reverse_it(expr);
+
+  object *result = NULL;
+  for (object *cell = reversed; cell != NULL; cell = cdr(cell)) {
+    if (!consp(car(cell))) {
+      push(car(cell), result);
+    } else {
+      for (object *subcell = car(cell); subcell != NULL; subcell = cdr(subcell)) {
+        push(car(subcell), result);
+      }
+    }
+  }
+  return reverse_it(result);
+}
+
+#define ATNOTHINGS (object*)-1
+
+object *process_quasiquoted (object *expr, int level, object *env) {
+  // Serial.print("**** Processing quasiquote of : ");
+  // printobject(expr, pserial);
+  // Serial.println();
+  // Serial.print("**** at level ");
+  // Serial.println(level);
+  if (!consp(expr)) return cons(expr, NULL);
+
+  if (isbuiltin(car(expr), QUASIQUOTE)) {
+    // Serial.println("nested quasiquote");
+    object *processed = process_quasiquoted(second(expr), level + 1, env);
+    return cons(cons(symbol(QUASIQUOTE), processed), NULL);
+  } else if (isbuiltin(car(expr), UNQUOTE)) {
+    // Serial.println("**** Processing UNQUOTE");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
+    if (level == 1) {
+      object *processed = process_quasiquoted(second(expr), level, env);
+      object *result = eval(car(processed), env);
+      // Serial.print("**** Result: ");
+      // printobject(result, pserial);
+      // Serial.println();
+      return cons(result, NULL);
+    } else {
+      object *processed = process_quasiquoted(second(expr), level - 1, env);
+      return cons(cons(symbol(UNQUOTE), processed), NULL);
+    }
+  } else if (isbuiltin(car(expr), UNQUOTESPLICING)) {
+    // Serial.println("**** Processing UNQUOTESPLICING");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
+    if (level == 1) {
+      object *processed = process_quasiquoted(second(expr), level, env);
+      // Serial.print("**** Processed: ");
+      // printobject(car(processed), pserial);
+      // Serial.println();
+      object *result = eval(car(processed), env);
+      // Serial.print("**** Result: ");
+      // printobject(result, pserial);
+      // Serial.println();
+      if (result == nil) return ATNOTHINGS;     // sentinel to signal that @... should insert nothing (i.e. empty list)
+      else return result;
+    } else {
+      object *processed = process_quasiquoted(second(expr), level - 1, env);
+      return cons(cons(symbol(UNQUOTESPLICING), processed), NULL);
+    }
+  } else {
+    // Serial.println("Processing something else");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
+    object *parts = NULL;
+    for (object *cell = expr; cell != NULL; cell = cdr(cell)) {
+      object *processed = process_quasiquoted(car(cell), level, env);
+      if (processed != ATNOTHINGS) { // Check for empty list insertion sentinal
+        push(processed, parts);
+      }
+    }
+    // Serial.print("**** parts: ");
+    // printobject(parts, pserial);
+    // Serial.println();
+
+    object *result = reverse_and_flatten(parts);
+    // Serial.print("**** Result: ");
+    // printobject(result, pserial);
+    // Serial.println();
+    return cons(result, NULL);
+  }
+
+
+}
+
+object *sp_quasiquote (object *args, object *env) {
+  checkargs(QUASIQUOTE, args);
+  object *result = process_quasiquoted(car(args), 1, env);
+  return car(result);
+}
+
+object *sp_unquote (object *args, object *env) {
+  (void)args, (void)env;
+  error2(UNQUOTE, PSTR("not supported outside a quasiquote form"));
+  return nil; // unreachable, just to satisfy compiler
+}
+
+object *sp_unquote_splicing (object *args, object *env) {
+  (void)args, (void)env;
+  error2(UNQUOTESPLICING, PSTR("not supported outside a quasiquote form"));
+  return nil; // unreachable, just to satisfy compiler
+}
+
+object *expand (object *body, object *env) {
+  object *expanded = eval(body, env);
+  return expanded;
+}
+
+//MOVE arg evaluation to sp_expand
+object *sp_expand (object *args, object *env) {
+  object *macro = eval(car(args), env);
+  if (!macrop(macro)) {
+    error(EXPAND, PSTR("needs a macro"), macro);
+  }
+  object *params = car(cdr(macro));
+  object *body = car(cdr(cdr(macro)));
+  if (!consp(params) || !consp(cdr(args))) {
+    error2(EXPAND, PSTR("params and args must be lists"));
+  }
+
+  bool contains_rest = false;
+  for (object *p = params; p != nil; p = cdr(p)) {
+    if (isbuiltin(car(p), AMPREST)) {
+      contains_rest = true;
+      break;
+    }
+  }
+
+  if (!contains_rest && listlength(EXPAND, params) != listlength(EXPAND, cdr(args))) {
+    error2(EXPAND, PSTR("different number of params and args"));
+  }
+  // add params->args to newenv
+  object *newenv = env;
+  push(newenv, GCStack);
+  object *p;
+  object *a;
+  for (p = params, a = cdr(args); p != NULL; p = cdr(p), a = cdr(a)) {
+    if (isbuiltin(car(p), AMPREST)) {
+      push(cons(car(cdr(p)), a), newenv);
+      car(GCStack) = newenv;
+      break;
+    } else {
+      push(cons(car(p), eval(car(a), env)), newenv);
+      // push(cons(car(p), car(a)), newenv);
+      car(GCStack) = newenv;
+    }
+  }
+  object *expanded = expand(body, newenv);
+  pop(GCStack);
+  return expanded;
 }
 
 // Tail-recursive forms
@@ -2306,6 +2547,33 @@ object *tf_and (object *args, object *env) {
 
 // Core functions
 
+object *fn_geterror (object *args, object *env) {
+  (void)args, (void)env;
+  return GlobalErrorString;
+}
+
+object *fn_throw (object *args, object *env) {
+  checkargs(THROW, args);
+  object *message = first(args);
+  if (!stringp(message)) error(THROW, notastring, message);
+  if (!tstflag(MUFFLEERRORS)) {
+    pfstring(PSTR("Error: "), pserial); printstring(message, pserial);
+    pln(pserial);
+  }
+  GlobalErrorString = message;
+  errorend();
+  // unreachable, just to satisfy compiler
+  return (object *)NULL;
+}
+
+object *fn_intern (object *args, object *env) {
+  checkargs(INTERN, args);
+  if (!stringp(car(args))) error(INTERN, notastring, car(args));
+  char b[BUFFERSIZE];
+  char *cs = cstring(car(args), b, BUFFERSIZE);
+  return internlong(cs);
+}
+
 object *fn_not (object *args, object *env) {
   (void) env;
   return (first(args) == nil) ? tee : nil;
@@ -2370,6 +2638,11 @@ object *fn_streamp (object *args, object *env) {
 object *fn_eq (object *args, object *env) {
   (void) env;
   return eq(first(args), second(args)) ? tee : nil;
+}
+
+object *fn_equal (object *args, object *env) {
+  (void) env;
+  return equal(first(args), second(args)) ? tee : nil;
 }
 
 // List functions
@@ -3603,11 +3876,7 @@ object *fn_analogread (object *args, object *env) {
 object *fn_analogreadresolution (object *args, object *env) {
   (void) env;
   object *arg = first(args);
-  #if defined(ESP32)
   analogReadResolution(checkinteger(ANALOGREADRESOLUTION, arg));
-  #else
-  error2(ANALOGREADRESOLUTION, PSTR("not supported"));
-  #endif
   return arg;
 }
 
@@ -3738,12 +4007,14 @@ object *fn_pprintall (object *args, object *env) {
 // Format
 
 void formaterr (object *formatstr, PGM_P string, uint8_t p) {
-  pln(pserial); indent(4, ' ', pserial); printstring(formatstr, pserial); pln(pserial);
-  indent(p+5, ' ', pserial); pserial('^');
-  errorsub(FORMAT, string);
-  pln(pserial);
+  if (!tstflag(MUFFLEERRORS)) {
+    pln(pserial); indent(4, ' ', pserial); printstring(formatstr, pserial); pln(pserial);
+    indent(p+5, ' ', pserial); pserial('^');
+    errorsub(FORMAT, string);
+    pln(pserial);
+  }
   GCStack = NULL;
-  longjmp(exception, 1);
+  longjmp(*errorbuffer, 1);
 }
 
 object *fn_format (object *args, object *env) {
@@ -4164,484 +4435,519 @@ object *fn_invertdisplay (object *args, object *env) {
 
 // Insert your own function definitions here
 
+
+object *fn_batteryvoltage(object *args, object *env) {
+    (void)args, (void)env;
+    return makefloat((float)battery.getVoltage());
+}
+
+object *fn_batterypercentage(object *args, object *env) {
+    (void)args, (void)env;
+    return makefloat((float)battery.getSOC());
+}
+
+object *fn_batterychangerate(object *args, object *env) {
+    (void)args, (void)env;
+    return makefloat((float)battery.getChangeRate());
+}
+
+
 // Built-in symbol names
-const char string0[] PROGMEM = "nil";
-const char string1[] PROGMEM = "t";
-const char string2[] PROGMEM = "nothing";
-const char string3[] PROGMEM = "&optional";
-const char string4[] PROGMEM = ":initial-element";
-const char string5[] PROGMEM = ":element-type";
-const char string6[] PROGMEM = "bit";
-const char string7[] PROGMEM = "&rest";
-const char string8[] PROGMEM = "lambda";
-const char string9[] PROGMEM = "let";
-const char string10[] PROGMEM = "let*";
-const char string11[] PROGMEM = "closure";
-const char string12[] PROGMEM = "*pc*";
-const char string13[] PROGMEM = "";
-const char string14[] PROGMEM = "quote";
-const char string15[] PROGMEM = "or";
-const char string16[] PROGMEM = "defun";
-const char string17[] PROGMEM = "defvar";
-const char string18[] PROGMEM = "setq";
-const char string19[] PROGMEM = "loop";
-const char string20[] PROGMEM = "return";
-const char string21[] PROGMEM = "push";
-const char string22[] PROGMEM = "pop";
-const char string23[] PROGMEM = "incf";
-const char string24[] PROGMEM = "decf";
-const char string25[] PROGMEM = "setf";
-const char string26[] PROGMEM = "dolist";
-const char string27[] PROGMEM = "dotimes";
-const char string28[] PROGMEM = "trace";
-const char string29[] PROGMEM = "untrace";
-const char string30[] PROGMEM = "for-millis";
-const char string31[] PROGMEM = "time";
-const char string32[] PROGMEM = "with-output-to-string";
-const char string33[] PROGMEM = "with-serial";
-const char string34[] PROGMEM = "with-i2c";
-const char string35[] PROGMEM = "with-spi";
-const char string36[] PROGMEM = "with-sd-card";
-const char string37[] PROGMEM = "with-gfx";
-const char string38[] PROGMEM = "with-client";
-const char string39[] PROGMEM = "";
-const char string40[] PROGMEM = "progn";
-const char string41[] PROGMEM = "if";
-const char string42[] PROGMEM = "cond";
-const char string43[] PROGMEM = "when";
-const char string44[] PROGMEM = "unless";
-const char string45[] PROGMEM = "case";
-const char string46[] PROGMEM = "and";
-const char string47[] PROGMEM = "";
-const char string48[] PROGMEM = "not";
-const char string49[] PROGMEM = "null";
-const char string50[] PROGMEM = "cons";
-const char string51[] PROGMEM = "atom";
-const char string52[] PROGMEM = "listp";
-const char string53[] PROGMEM = "consp";
-const char string54[] PROGMEM = "symbolp";
-const char string55[] PROGMEM = "arrayp";
-const char string56[] PROGMEM = "boundp";
-const char string57[] PROGMEM = "set";
-const char string58[] PROGMEM = "streamp";
-const char string59[] PROGMEM = "eq";
-const char string60[] PROGMEM = "car";
-const char string61[] PROGMEM = "first";
-const char string62[] PROGMEM = "cdr";
-const char string63[] PROGMEM = "rest";
-const char string64[] PROGMEM = "caar";
-const char string65[] PROGMEM = "cadr";
-const char string66[] PROGMEM = "second";
-const char string67[] PROGMEM = "cdar";
-const char string68[] PROGMEM = "cddr";
-const char string69[] PROGMEM = "caaar";
-const char string70[] PROGMEM = "caadr";
-const char string71[] PROGMEM = "cadar";
-const char string72[] PROGMEM = "caddr";
-const char string73[] PROGMEM = "third";
-const char string74[] PROGMEM = "cdaar";
-const char string75[] PROGMEM = "cdadr";
-const char string76[] PROGMEM = "cddar";
-const char string77[] PROGMEM = "cdddr";
-const char string78[] PROGMEM = "length";
-const char string79[] PROGMEM = "array-dimensions";
-const char string80[] PROGMEM = "list";
-const char string81[] PROGMEM = "make-array";
-const char string82[] PROGMEM = "reverse";
-const char string83[] PROGMEM = "nth";
-const char string84[] PROGMEM = "aref";
-const char string85[] PROGMEM = "assoc";
-const char string86[] PROGMEM = "member";
-const char string87[] PROGMEM = "apply";
-const char string88[] PROGMEM = "funcall";
-const char string89[] PROGMEM = "append";
-const char string90[] PROGMEM = "mapc";
-const char string91[] PROGMEM = "mapcar";
-const char string92[] PROGMEM = "mapcan";
-const char string93[] PROGMEM = "+";
-const char string94[] PROGMEM = "-";
-const char string95[] PROGMEM = "*";
-const char string96[] PROGMEM = "/";
-const char string97[] PROGMEM = "mod";
-const char string98[] PROGMEM = "1+";
-const char string99[] PROGMEM = "1-";
-const char string100[] PROGMEM = "abs";
-const char string101[] PROGMEM = "random";
-const char string102[] PROGMEM = "max";
-const char string103[] PROGMEM = "min";
-const char string104[] PROGMEM = "/=";
-const char string105[] PROGMEM = "=";
-const char string106[] PROGMEM = "<";
-const char string107[] PROGMEM = "<=";
-const char string108[] PROGMEM = ">";
-const char string109[] PROGMEM = ">=";
-const char string110[] PROGMEM = "plusp";
-const char string111[] PROGMEM = "minusp";
-const char string112[] PROGMEM = "zerop";
-const char string113[] PROGMEM = "oddp";
-const char string114[] PROGMEM = "evenp";
-const char string115[] PROGMEM = "integerp";
-const char string116[] PROGMEM = "numberp";
-const char string117[] PROGMEM = "float";
-const char string118[] PROGMEM = "floatp";
-const char string119[] PROGMEM = "sin";
-const char string120[] PROGMEM = "cos";
-const char string121[] PROGMEM = "tan";
-const char string122[] PROGMEM = "asin";
-const char string123[] PROGMEM = "acos";
-const char string124[] PROGMEM = "atan";
-const char string125[] PROGMEM = "sinh";
-const char string126[] PROGMEM = "cosh";
-const char string127[] PROGMEM = "tanh";
-const char string128[] PROGMEM = "exp";
-const char string129[] PROGMEM = "sqrt";
-const char string130[] PROGMEM = "log";
-const char string131[] PROGMEM = "expt";
-const char string132[] PROGMEM = "ceiling";
-const char string133[] PROGMEM = "floor";
-const char string134[] PROGMEM = "truncate";
-const char string135[] PROGMEM = "round";
-const char string136[] PROGMEM = "char";
-const char string137[] PROGMEM = "char-code";
-const char string138[] PROGMEM = "code-char";
-const char string139[] PROGMEM = "characterp";
-const char string140[] PROGMEM = "stringp";
-const char string141[] PROGMEM = "string=";
-const char string142[] PROGMEM = "string<";
-const char string143[] PROGMEM = "string>";
-const char string144[] PROGMEM = "sort";
-const char string145[] PROGMEM = "string";
-const char string146[] PROGMEM = "concatenate";
-const char string147[] PROGMEM = "subseq";
-const char string148[] PROGMEM = "read-from-string";
-const char string149[] PROGMEM = "princ-to-string";
-const char string150[] PROGMEM = "prin1-to-string";
-const char string151[] PROGMEM = "logand";
-const char string152[] PROGMEM = "logior";
-const char string153[] PROGMEM = "logxor";
-const char string154[] PROGMEM = "lognot";
-const char string155[] PROGMEM = "ash";
-const char string156[] PROGMEM = "logbitp";
-const char string157[] PROGMEM = "eval";
-const char string158[] PROGMEM = "globals";
-const char string159[] PROGMEM = "locals";
-const char string160[] PROGMEM = "makunbound";
-const char string161[] PROGMEM = "break";
-const char string162[] PROGMEM = "read";
-const char string163[] PROGMEM = "prin1";
-const char string164[] PROGMEM = "print";
-const char string165[] PROGMEM = "princ";
-const char string166[] PROGMEM = "terpri";
-const char string167[] PROGMEM = "read-byte";
-const char string168[] PROGMEM = "read-line";
-const char string169[] PROGMEM = "write-byte";
-const char string170[] PROGMEM = "write-string";
-const char string171[] PROGMEM = "write-line";
-const char string172[] PROGMEM = "restart-i2c";
-const char string173[] PROGMEM = "gc";
-const char string174[] PROGMEM = "room";
-const char string175[] PROGMEM = "save-image";
-const char string176[] PROGMEM = "load-image";
-const char string177[] PROGMEM = "cls";
-const char string178[] PROGMEM = "pinmode";
-const char string179[] PROGMEM = "digitalread";
-const char string180[] PROGMEM = "digitalwrite";
-const char string181[] PROGMEM = "analogread";
-const char string182[] PROGMEM = "analogreadresolution";
-const char string183[] PROGMEM = "analogwrite";
-const char string184[] PROGMEM = "delay";
-const char string185[] PROGMEM = "millis";
-const char string186[] PROGMEM = "sleep";
-const char string187[] PROGMEM = "note";
-const char string187a[] PROGMEM = "register";
-const char string188[] PROGMEM = "edit";
-const char string189[] PROGMEM = "pprint";
-const char string190[] PROGMEM = "pprintall";
-const char string191[] PROGMEM = "format";
-const char string192[] PROGMEM = "require";
-const char string193[] PROGMEM = "list-library";
-const char string194[] PROGMEM = "available";
-const char string195[] PROGMEM = "wifi-server";
-const char string196[] PROGMEM = "wifi-softap";
-const char string197[] PROGMEM = "connected";
-const char string198[] PROGMEM = "wifi-localip";
-const char string199[] PROGMEM = "wifi-connect";
-const char string200[] PROGMEM = "draw-pixel";
-const char string201[] PROGMEM = "draw-line";
-const char string202[] PROGMEM = "draw-rect";
-const char string203[] PROGMEM = "fill-rect";
-const char string204[] PROGMEM = "draw-circle";
-const char string205[] PROGMEM = "fill-circle";
-const char string206[] PROGMEM = "draw-round-rect";
-const char string207[] PROGMEM = "fill-round-rect";
-const char string208[] PROGMEM = "draw-triangle";
-const char string209[] PROGMEM = "fill-triangle";
-const char string210[] PROGMEM = "draw-char";
-const char string211[] PROGMEM = "set-cursor";
-const char string212[] PROGMEM = "set-text-color";
-const char string213[] PROGMEM = "set-text-size";
-const char string214[] PROGMEM = "set-text-wrap";
-const char string215[] PROGMEM = "fill-screen";
-const char string216[] PROGMEM = "set-rotation";
-const char string217[] PROGMEM = "invert-display";
-const char string218[] PROGMEM = "";
-const char string219[] PROGMEM = ":led-builtin";
-const char string220[] PROGMEM = ":high";
-const char string221[] PROGMEM = ":low";
-#if defined(ESP8266)
-const char string222[] PROGMEM = ":input";
-const char string223[] PROGMEM = ":input-pullup";
-const char string224[] PROGMEM = ":output";
-const char string225[] PROGMEM = "";
-#elif defined(ESP32)
-const char string222[] PROGMEM = ":input";
-const char string223[] PROGMEM = ":input-pullup";
-const char string224[] PROGMEM = ":input-pulldown";
-const char string225[] PROGMEM = ":output";
-const char string226[] PROGMEM = "";
-#endif
+const char string_nil[] PROGMEM = "nil";
+const char string_t[] PROGMEM = "t";
+const char string_nothing[] PROGMEM = "nothing";
+const char string_andoptional[] PROGMEM = "&optional";
+const char string_initialelement[] PROGMEM = ":initial-element";
+const char string_elementtype[] PROGMEM = ":element-type";
+const char string_bit[] PROGMEM = "bit";
+const char string_andrest[] PROGMEM = "&rest";
+const char string_lambda[] PROGMEM = "lambda";
+const char string_let[] PROGMEM = "let";
+const char string_letstar[] PROGMEM = "let*";
+const char string_closure[] PROGMEM = "closure";
+const char string_starpcstar[] PROGMEM = "*pc*";
+const char string_SPECIALFORMS[] PROGMEM = "";
+const char string_quote[] PROGMEM = "quote";
+const char string_or[] PROGMEM = "or";
+const char string_defun[] PROGMEM = "defun";
+const char string_defvar[] PROGMEM = "defvar";
+const char string_setq[] PROGMEM = "setq";
+const char string_loop[] PROGMEM = "loop";
+const char string_return[] PROGMEM = "return";
+const char string_push[] PROGMEM = "push";
+const char string_pop[] PROGMEM = "pop";
+const char string_incf[] PROGMEM = "incf";
+const char string_decf[] PROGMEM = "decf";
+const char string_setf[] PROGMEM = "setf";
+const char string_dolist[] PROGMEM = "dolist";
+const char string_dotimes[] PROGMEM = "dotimes";
+const char string_trace[] PROGMEM = "trace";
+const char string_untrace[] PROGMEM = "untrace";
+const char string_formillis[] PROGMEM = "for-millis";
+const char string_time[] PROGMEM = "time";
+const char string_withoutputtostring[] PROGMEM = "with-output-to-string";
+const char string_withserial[] PROGMEM = "with-serial";
+const char string_withi2c[] PROGMEM = "with-i2c";
+const char string_withspi[] PROGMEM = "with-spi";
+const char string_withsdcard[] PROGMEM = "with-sd-card";
+const char string_withgfx[] PROGMEM = "with-gfx";
+const char string_withclient[] PROGMEM = "with-client";
+const char string_unwindprotect[] PROGMEM = "unwind-protect";
+const char string_ignoreerrors[] PROGMEM = "ignore-errors";
+//const char string_error[] PROGMEM = "error";
+const char string_MACRO_SENTINEL[] PROGMEM = "macro";
+const char string_defmacro[] PROGMEM = "defmacro";
+const char string_quasiquote[] PROGMEM = "quasiquote";
+const char string_unquote[] PROGMEM = "unquote";
+const char string_unquotesplicing[] PROGMEM = "unquote-splicing";
+const char string_expand[] PROGMEM = "expand";
+const char string_TAILFORMS[] PROGMEM = "";
+const char string_progn[] PROGMEM = "progn";
+const char string_if[] PROGMEM = "if";
+const char string_cond[] PROGMEM = "cond";
+const char string_when[] PROGMEM = "when";
+const char string_unless[] PROGMEM = "unless";
+const char string_case[] PROGMEM = "case";
+const char string_and[] PROGMEM = "and";
+const char string_FUNCTIONS[] PROGMEM = "";
+const char string_geterror[] PROGMEM = "get-error";
+const char string_throw[] PROGMEM = "throw";
+const char string_intern[] PROGMEM = "intern";
+const char string_not[] PROGMEM = "not";
+const char string_null[] PROGMEM = "null";
+const char string_cons[] PROGMEM = "cons";
+const char string_atom[] PROGMEM = "atom";
+const char string_listp[] PROGMEM = "listp";
+const char string_consp[] PROGMEM = "consp";
+const char string_symbolp[] PROGMEM = "symbolp";
+const char string_arrayp[] PROGMEM = "arrayp";
+const char string_boundp[] PROGMEM = "boundp";
+const char string_set[] PROGMEM = "set";
+const char string_streamp[] PROGMEM = "streamp";
+const char string_eq[] PROGMEM = "eq";
+const char string_equal[] PROGMEM = "equal";
+const char string_car[] PROGMEM = "car";
+const char string_first[] PROGMEM = "first";
+const char string_cdr[] PROGMEM = "cdr";
+const char string_rest[] PROGMEM = "rest";
+const char string_caar[] PROGMEM = "caar";
+const char string_cadr[] PROGMEM = "cadr";
+const char string_second[] PROGMEM = "second";
+const char string_cdar[] PROGMEM = "cdar";
+const char string_cddr[] PROGMEM = "cddr";
+const char string_caaar[] PROGMEM = "caaar";
+const char string_caadr[] PROGMEM = "caadr";
+const char string_cadar[] PROGMEM = "cadar";
+const char string_caddr[] PROGMEM = "caddr";
+const char string_third[] PROGMEM = "third";
+const char string_cdaar[] PROGMEM = "cdaar";
+const char string_cdadr[] PROGMEM = "cdadr";
+const char string_cddar[] PROGMEM = "cddar";
+const char string_cdddr[] PROGMEM = "cdddr";
+const char string_length[] PROGMEM = "length";
+const char string_arraydimensions[] PROGMEM = "array-dimensions";
+const char string_list[] PROGMEM = "list";
+const char string_makearray[] PROGMEM = "make-array";
+const char string_reverse[] PROGMEM = "reverse";
+const char string_nth[] PROGMEM = "nth";
+const char string_aref[] PROGMEM = "aref";
+const char string_assoc[] PROGMEM = "assoc";
+const char string_member[] PROGMEM = "member";
+const char string_apply[] PROGMEM = "apply";
+const char string_funcall[] PROGMEM = "funcall";
+const char string_append[] PROGMEM = "append";
+const char string_mapc[] PROGMEM = "mapc";
+const char string_mapcar[] PROGMEM = "mapcar";
+const char string_mapcan[] PROGMEM = "mapcan";
+const char string_plus[] PROGMEM = "+";
+const char string_minus[] PROGMEM = "-";
+const char string_times[] PROGMEM = "*";
+const char string_divide[] PROGMEM = "/";
+const char string_mod[] PROGMEM = "mod";
+const char string_oneplus[] PROGMEM = "1+";
+const char string_oneminus[] PROGMEM = "1-";
+const char string_abs[] PROGMEM = "abs";
+const char string_random[] PROGMEM = "random";
+const char string_max[] PROGMEM = "max";
+const char string_min[] PROGMEM = "min";
+const char string_noteq[] PROGMEM = "/=";
+const char string_numeq[] PROGMEM = "=";
+const char string_less[] PROGMEM = "<";
+const char string_lesseq[] PROGMEM = "<=";
+const char string_greater[] PROGMEM = ">";
+const char string_greatereq[] PROGMEM = ">=";
+const char string_plusp[] PROGMEM = "plusp";
+const char string_minusp[] PROGMEM = "minusp";
+const char string_zerop[] PROGMEM = "zerop";
+const char string_oddp[] PROGMEM = "oddp";
+const char string_evenp[] PROGMEM = "evenp";
+const char string_integerp[] PROGMEM = "integerp";
+const char string_numberp[] PROGMEM = "numberp";
+const char string_float[] PROGMEM = "float";
+const char string_floatp[] PROGMEM = "floatp";
+const char string_sin[] PROGMEM = "sin";
+const char string_cos[] PROGMEM = "cos";
+const char string_tan[] PROGMEM = "tan";
+const char string_asin[] PROGMEM = "asin";
+const char string_acos[] PROGMEM = "acos";
+const char string_atan[] PROGMEM = "atan";
+const char string_sinh[] PROGMEM = "sinh";
+const char string_cosh[] PROGMEM = "cosh";
+const char string_tanh[] PROGMEM = "tanh";
+const char string_exp[] PROGMEM = "exp";
+const char string_sqrt[] PROGMEM = "sqrt";
+const char string_log[] PROGMEM = "log";
+const char string_expt[] PROGMEM = "expt";
+const char string_ceiling[] PROGMEM = "ceiling";
+const char string_floor[] PROGMEM = "floor";
+const char string_truncate[] PROGMEM = "truncate";
+const char string_round[] PROGMEM = "round";
+const char string_char[] PROGMEM = "char";
+const char string_charcode[] PROGMEM = "char-code";
+const char string_codechar[] PROGMEM = "code-char";
+const char string_characterp[] PROGMEM = "characterp";
+const char string_stringp[] PROGMEM = "stringp";
+const char string_stringeq[] PROGMEM = "string=";
+const char string_stringlt[] PROGMEM = "string<";
+const char string_stringgt[] PROGMEM = "string>";
+const char string_sort[] PROGMEM = "sort";
+const char string_string[] PROGMEM = "string";
+const char string_concatenate[] PROGMEM = "concatenate";
+const char string_subseq[] PROGMEM = "subseq";
+const char string_readfromstring[] PROGMEM = "read-from-string";
+const char string_princtostring[] PROGMEM = "princ-to-string";
+const char string_prin1tostring[] PROGMEM = "prin1-to-string";
+const char string_logand[] PROGMEM = "logand";
+const char string_logior[] PROGMEM = "logior";
+const char string_logxor[] PROGMEM = "logxor";
+const char string_lognot[] PROGMEM = "lognot";
+const char string_ash[] PROGMEM = "ash";
+const char string_logbitp[] PROGMEM = "logbitp";
+const char string_eval[] PROGMEM = "eval";
+const char string_globals[] PROGMEM = "globals";
+const char string_locals[] PROGMEM = "locals";
+const char string_makunbound[] PROGMEM = "makunbound";
+const char string_break[] PROGMEM = "break";
+const char string_read[] PROGMEM = "read";
+const char string_prin1[] PROGMEM = "prin1";
+const char string_print[] PROGMEM = "print";
+const char string_princ[] PROGMEM = "princ";
+const char string_terpri[] PROGMEM = "terpri";
+const char string_readbyte[] PROGMEM = "read-byte";
+const char string_readline[] PROGMEM = "read-line";
+const char string_writebyte[] PROGMEM = "write-byte";
+const char string_writestring[] PROGMEM = "write-string";
+const char string_writeline[] PROGMEM = "write-line";
+const char string_restarti2c[] PROGMEM = "restart-i2c";
+const char string_gc[] PROGMEM = "gc";
+const char string_room[] PROGMEM = "room";
+const char string_saveimage[] PROGMEM = "save-image";
+const char string_loadimage[] PROGMEM = "load-image";
+const char string_cls[] PROGMEM = "cls";
+const char string_pinmode[] PROGMEM = "pinmode";
+const char string_digitalread[] PROGMEM = "digitalread";
+const char string_digitalwrite[] PROGMEM = "digitalwrite";
+const char string_analogread[] PROGMEM = "analogread";
+const char string_analogreadresolution[] PROGMEM = "analogreadresolution";
+const char string_analogwrite[] PROGMEM = "analogwrite";
+const char string_delay[] PROGMEM = "delay";
+const char string_millis[] PROGMEM = "millis";
+const char string_sleep[] PROGMEM = "sleep";
+const char string_note[] PROGMEM = "note";
+const char string_register[] PROGMEM = "register";
+const char string_edit[] PROGMEM = "edit";
+const char string_pprint[] PROGMEM = "pprint";
+const char string_pprintall[] PROGMEM = "pprintall";
+const char string_format[] PROGMEM = "format";
+const char string_require[] PROGMEM = "require";
+const char string_listlibrary[] PROGMEM = "list-library";
+const char string_available[] PROGMEM = "available";
+const char string_wifiserver[] PROGMEM = "wifi-server";
+const char string_wifisoftap[] PROGMEM = "wifi-softap";
+const char string_connected[] PROGMEM = "connected";
+const char string_wifilocalip[] PROGMEM = "wifi-localip";
+const char string_wificonnect[] PROGMEM = "wifi-connect";
+const char string_drawpixel[] PROGMEM = "draw-pixel";
+const char string_drawline[] PROGMEM = "draw-line";
+const char string_drawrect[] PROGMEM = "draw-rect";
+const char string_fillrect[] PROGMEM = "fill-rect";
+const char string_drawcircle[] PROGMEM = "draw-circle";
+const char string_fillcircle[] PROGMEM = "fill-circle";
+const char string_drawroundrect[] PROGMEM = "draw-round-rect";
+const char string_fillroundrect[] PROGMEM = "fill-round-rect";
+const char string_drawtriangle[] PROGMEM = "draw-triangle";
+const char string_filltriangle[] PROGMEM = "fill-triangle";
+const char string_drawchar[] PROGMEM = "draw-char";
+const char string_setcursor[] PROGMEM = "set-cursor";
+const char string_settextcolor[] PROGMEM = "set-text-color";
+const char string_settextsize[] PROGMEM = "set-text-size";
+const char string_settextwrap[] PROGMEM = "set-text-wrap";
+const char string_fillscreen[] PROGMEM = "fill-screen";
+const char string_setrotation[] PROGMEM = "set-rotation";
+const char string_invertdisplay[] PROGMEM = "invert-display";
+const char string_SPECIALKEYWORDS[] PROGMEM = "";
+const char string_ledbuiltin[] PROGMEM = ":led-builtin";
+const char string_high[] PROGMEM = ":high";
+const char string_low[] PROGMEM = ":low";
+const char string_input[] PROGMEM = ":input";
+const char string_inputpullup[] PROGMEM = ":input-pullup";
+const char string_inputpulldown[] PROGMEM = ":input-pulldown";
+const char string_output[] PROGMEM = ":output";
+const char string_USERFUNCTIONS[] PROGMEM = "";
 
 // Insert your own function names here
+const char string_batteryvoltage[] PROGMEM = "battery:voltage";
+const char string_batterypercentage[] PROGMEM = "battery:percentage";
+const char string_batterychangerate[] PROGMEM = "battery:change-rate";
 
 // Built-in symbol lookup table
 const tbl_entry_t lookup_table[] PROGMEM = {
-  { string0, NULL, 0x00 },
-  { string1, NULL, 0x00 },
-  { string2, NULL, 0x00 },
-  { string3, NULL, 0x00 },
-  { string4, NULL, 0x00 },
-  { string5, NULL, 0x00 },
-  { string6, NULL, 0x00 },
-  { string7, NULL, 0x00 },
-  { string8, NULL, 0x0F },
-  { string9, NULL, 0x0F },
-  { string10, NULL, 0x0F },
-  { string11, NULL, 0x0F },
-  { string12, NULL, 0x0F },
-  { string13, NULL, 0x00 },
-  { string14, sp_quote, 0x11 },
-  { string15, sp_or, 0x0F },
-  { string16, sp_defun, 0x2F },
-  { string17, sp_defvar, 0x13 },
-  { string18, sp_setq, 0x2F },
-  { string19, sp_loop, 0x0F },
-  { string20, sp_return, 0x0F },
-  { string21, sp_push, 0x22 },
-  { string22, sp_pop, 0x11 },
-  { string23, sp_incf, 0x12 },
-  { string24, sp_decf, 0x12 },
-  { string25, sp_setf, 0x2F },
-  { string26, sp_dolist, 0x1F },
-  { string27, sp_dotimes, 0x1F },
-  { string28, sp_trace, 0x01 },
-  { string29, sp_untrace, 0x01 },
-  { string30, sp_formillis, 0x1F },
-  { string31, sp_time, 0x11 },
-  { string32, sp_withoutputtostring, 0x1F },
-  { string33, sp_withserial, 0x1F },
-  { string34, sp_withi2c, 0x1F },
-  { string35, sp_withspi, 0x1F },
-  { string36, sp_withsdcard, 0x2F },
-  { string37, sp_withgfx, 0x1F },
-  { string38, sp_withclient, 0x12 },
-  { string39, NULL, 0x00 },
-  { string40, tf_progn, 0x0F },
-  { string41, tf_if, 0x23 },
-  { string42, tf_cond, 0x0F },
-  { string43, tf_when, 0x1F },
-  { string44, tf_unless, 0x1F },
-  { string45, tf_case, 0x1F },
-  { string46, tf_and, 0x0F },
-  { string47, NULL, 0x00 },
-  { string48, fn_not, 0x11 },
-  { string49, fn_not, 0x11 },
-  { string50, fn_cons, 0x22 },
-  { string51, fn_atom, 0x11 },
-  { string52, fn_listp, 0x11 },
-  { string53, fn_consp, 0x11 },
-  { string54, fn_symbolp, 0x11 },
-  { string55, fn_arrayp, 0x11 },
-  { string56, fn_boundp, 0x11 },
-  { string57, fn_setfn, 0x2F },
-  { string58, fn_streamp, 0x11 },
-  { string59, fn_eq, 0x22 },
-  { string60, fn_car, 0x11 },
-  { string61, fn_car, 0x11 },
-  { string62, fn_cdr, 0x11 },
-  { string63, fn_cdr, 0x11 },
-  { string64, fn_caar, 0x11 },
-  { string65, fn_cadr, 0x11 },
-  { string66, fn_cadr, 0x11 },
-  { string67, fn_cdar, 0x11 },
-  { string68, fn_cddr, 0x11 },
-  { string69, fn_caaar, 0x11 },
-  { string70, fn_caadr, 0x11 },
-  { string71, fn_cadar, 0x11 },
-  { string72, fn_caddr, 0x11 },
-  { string73, fn_caddr, 0x11 },
-  { string74, fn_cdaar, 0x11 },
-  { string75, fn_cdadr, 0x11 },
-  { string76, fn_cddar, 0x11 },
-  { string77, fn_cdddr, 0x11 },
-  { string78, fn_length, 0x11 },
-  { string79, fn_arraydimensions, 0x11 },
-  { string80, fn_list, 0x0F },
-  { string81, fn_makearray, 0x15 },
-  { string82, fn_reverse, 0x11 },
-  { string83, fn_nth, 0x22 },
-  { string84, fn_aref, 0x2F },
-  { string85, fn_assoc, 0x22 },
-  { string86, fn_member, 0x22 },
-  { string87, fn_apply, 0x2F },
-  { string88, fn_funcall, 0x1F },
-  { string89, fn_append, 0x0F },
-  { string90, fn_mapc, 0x2F },
-  { string91, fn_mapcar, 0x2F },
-  { string92, fn_mapcan, 0x2F },
-  { string93, fn_add, 0x0F },
-  { string94, fn_subtract, 0x1F },
-  { string95, fn_multiply, 0x0F },
-  { string96, fn_divide, 0x1F },
-  { string97, fn_mod, 0x22 },
-  { string98, fn_oneplus, 0x11 },
-  { string99, fn_oneminus, 0x11 },
-  { string100, fn_abs, 0x11 },
-  { string101, fn_random, 0x11 },
-  { string102, fn_maxfn, 0x1F },
-  { string103, fn_minfn, 0x1F },
-  { string104, fn_noteq, 0x1F },
-  { string105, fn_numeq, 0x1F },
-  { string106, fn_less, 0x1F },
-  { string107, fn_lesseq, 0x1F },
-  { string108, fn_greater, 0x1F },
-  { string109, fn_greatereq, 0x1F },
-  { string110, fn_plusp, 0x11 },
-  { string111, fn_minusp, 0x11 },
-  { string112, fn_zerop, 0x11 },
-  { string113, fn_oddp, 0x11 },
-  { string114, fn_evenp, 0x11 },
-  { string115, fn_integerp, 0x11 },
-  { string116, fn_numberp, 0x11 },
-  { string117, fn_floatfn, 0x11 },
-  { string118, fn_floatp, 0x11 },
-  { string119, fn_sin, 0x11 },
-  { string120, fn_cos, 0x11 },
-  { string121, fn_tan, 0x11 },
-  { string122, fn_asin, 0x11 },
-  { string123, fn_acos, 0x11 },
-  { string124, fn_atan, 0x12 },
-  { string125, fn_sinh, 0x11 },
-  { string126, fn_cosh, 0x11 },
-  { string127, fn_tanh, 0x11 },
-  { string128, fn_exp, 0x11 },
-  { string129, fn_sqrt, 0x11 },
-  { string130, fn_log, 0x12 },
-  { string131, fn_expt, 0x22 },
-  { string132, fn_ceiling, 0x12 },
-  { string133, fn_floor, 0x12 },
-  { string134, fn_truncate, 0x12 },
-  { string135, fn_round, 0x12 },
-  { string136, fn_char, 0x22 },
-  { string137, fn_charcode, 0x11 },
-  { string138, fn_codechar, 0x11 },
-  { string139, fn_characterp, 0x11 },
-  { string140, fn_stringp, 0x11 },
-  { string141, fn_stringeq, 0x22 },
-  { string142, fn_stringless, 0x22 },
-  { string143, fn_stringgreater, 0x22 },
-  { string144, fn_sort, 0x22 },
-  { string145, fn_stringfn, 0x11 },
-  { string146, fn_concatenate, 0x1F },
-  { string147, fn_subseq, 0x23 },
-  { string148, fn_readfromstring, 0x11 },
-  { string149, fn_princtostring, 0x11 },
-  { string150, fn_prin1tostring, 0x11 },
-  { string151, fn_logand, 0x0F },
-  { string152, fn_logior, 0x0F },
-  { string153, fn_logxor, 0x0F },
-  { string154, fn_lognot, 0x11 },
-  { string155, fn_ash, 0x22 },
-  { string156, fn_logbitp, 0x22 },
-  { string157, fn_eval, 0x11 },
-  { string158, fn_globals, 0x00 },
-  { string159, fn_locals, 0x00 },
-  { string160, fn_makunbound, 0x11 },
-  { string161, fn_break, 0x00 },
-  { string162, fn_read, 0x01 },
-  { string163, fn_prin1, 0x12 },
-  { string164, fn_print, 0x12 },
-  { string165, fn_princ, 0x12 },
-  { string166, fn_terpri, 0x01 },
-  { string167, fn_readbyte, 0x02 },
-  { string168, fn_readline, 0x01 },
-  { string169, fn_writebyte, 0x12 },
-  { string170, fn_writestring, 0x12 },
-  { string171, fn_writeline, 0x12 },
-  { string172, fn_restarti2c, 0x12 },
-  { string173, fn_gc, 0x00 },
-  { string174, fn_room, 0x00 },
-  { string175, fn_saveimage, 0x01 },
-  { string176, fn_loadimage, 0x01 },
-  { string177, fn_cls, 0x00 },
-  { string178, fn_pinmode, 0x22 },
-  { string179, fn_digitalread, 0x11 },
-  { string180, fn_digitalwrite, 0x22 },
-  { string181, fn_analogread, 0x11 },
-  { string182, fn_analogreadresolution, 0x11 },
-  { string183, fn_analogwrite, 0x22 },
-  { string184, fn_delay, 0x11 },
-  { string185, fn_millis, 0x00 },
-  { string186, fn_sleep, 0x11 },
-  { string187, fn_note, 0x03 },
-  { string187a, fn_register, 0x12 },
-  { string188, fn_edit, 0x11 },
-  { string189, fn_pprint, 0x12 },
-  { string190, fn_pprintall, 0x01 },
-  { string191, fn_format, 0x2F },
-  { string192, fn_require, 0x11 },
-  { string193, fn_listlibrary, 0x00 },
-  { string194, fn_available, 0x11 },
-  { string195, fn_wifiserver, 0x00 },
-  { string196, fn_wifisoftap, 0x04 },
-  { string197, fn_connected, 0x11 },
-  { string198, fn_wifilocalip, 0x00 },
-  { string199, fn_wificonnect, 0x02 },
-  { string200, fn_drawpixel, 0x23 },
-  { string201, fn_drawline, 0x45 },
-  { string202, fn_drawrect, 0x45 },
-  { string203, fn_fillrect, 0x45 },
-  { string204, fn_drawcircle, 0x34 },
-  { string205, fn_fillcircle, 0x34 },
-  { string206, fn_drawroundrect, 0x56 },
-  { string207, fn_fillroundrect, 0x56 },
-  { string208, fn_drawtriangle, 0x67 },
-  { string209, fn_filltriangle, 0x67 },
-  { string210, fn_drawchar, 0x36 },
-  { string211, fn_setcursor, 0x22 },
-  { string212, fn_settextcolor, 0x12 },
-  { string213, fn_settextsize, 0x11 },
-  { string214, fn_settextwrap, 0x11 },
-  { string215, fn_fillscreen, 0x01 },
-  { string216, fn_setrotation, 0x11 },
-  { string217, fn_invertdisplay, 0x11 },
-  { string218, NULL, 0x00 },
-  { string219, (fn_ptr_type)LED_BUILTIN, 0 },
-  { string220, (fn_ptr_type)HIGH, DIGITALWRITE },
-  { string221, (fn_ptr_type)LOW, DIGITALWRITE },
-#if defined(ESP8266)
-  { string222, (fn_ptr_type)INPUT, PINMODE },
-  { string223, (fn_ptr_type)INPUT_PULLUP, PINMODE },
-  { string224, (fn_ptr_type)OUTPUT, PINMODE },
-  { string225, NULL, 0x00 },
-#elif defined(ESP32)
-  { string222, (fn_ptr_type)INPUT, PINMODE },
-  { string223, (fn_ptr_type)INPUT_PULLUP, PINMODE },
-  { string224, (fn_ptr_type)INPUT_PULLDOWN, PINMODE },
-  { string225, (fn_ptr_type)OUTPUT, PINMODE },
-  { string226, NULL, 0x00 },
-#endif
+  { string_nil, NULL, 0x00 },
+  { string_t, NULL, 0x00 },
+  { string_nothing, NULL, 0x00 },
+  { string_andoptional, NULL, 0x00 },
+  { string_initialelement, NULL, 0x00 },
+  { string_elementtype, NULL, 0x00 },
+  { string_bit, NULL, 0x00 },
+  { string_andrest, NULL, 0x00 },
+  { string_lambda, NULL, 0x0F },
+  { string_let, NULL, 0x0F },
+  { string_letstar, NULL, 0x0F },
+  { string_closure, NULL, 0x0F },
+  { string_starpcstar, NULL, 0x0F },
+  { string_SPECIALFORMS, NULL, 0x00 },
+  { string_quote, sp_quote, 0x11 },
+  { string_or, sp_or, 0x0F },
+  { string_defun, sp_defun, 0x2F },
+  { string_defvar, sp_defvar, 0x13 },
+  { string_setq, sp_setq, 0x2F },
+  { string_loop, sp_loop, 0x0F },
+  { string_return, sp_return, 0x0F },
+  { string_push, sp_push, 0x22 },
+  { string_pop, sp_pop, 0x11 },
+  { string_incf, sp_incf, 0x12 },
+  { string_decf, sp_decf, 0x12 },
+  { string_setf, sp_setf, 0x2F },
+  { string_dolist, sp_dolist, 0x1F },
+  { string_dotimes, sp_dotimes, 0x1F },
+  { string_trace, sp_trace, 0x01 },
+  { string_untrace, sp_untrace, 0x01 },
+  { string_formillis, sp_formillis, 0x1F },
+  { string_time, sp_time, 0x11 },
+  { string_withoutputtostring, sp_withoutputtostring, 0x1F },
+  { string_withserial, sp_withserial, 0x1F },
+  { string_withi2c, sp_withi2c, 0x1F },
+  { string_withspi, sp_withspi, 0x1F },
+  { string_withsdcard, sp_withsdcard, 0x2F },
+  { string_withgfx, sp_withgfx, 0x1F },
+  { string_withclient, sp_withclient, 0x12 },
+  { string_unwindprotect, sp_unwindprotect, 0x1F },
+  { string_ignoreerrors, sp_ignoreerrors, 0x0F },
+//  { string_error, sp_error, 0x1F },
+  { string_MACRO_SENTINEL, NULL, 0x00 },
+  { string_defmacro, sp_defmacro, 0x0F },
+  { string_quasiquote, sp_quasiquote, 0x11 },
+  { string_unquote, sp_unquote, 0x1 },
+  { string_unquotesplicing, sp_unquote_splicing, 0x11 },
+  { string_expand, sp_expand, 0x1F },
+  { string_TAILFORMS, NULL, 0x00 },
+  { string_progn, tf_progn, 0x0F },
+  { string_if, tf_if, 0x23 },
+  { string_cond, tf_cond, 0x0F },
+  { string_when, tf_when, 0x1F },
+  { string_unless, tf_unless, 0x1F },
+  { string_case, tf_case, 0x1F },
+  { string_and, tf_and, 0x0F },
+  { string_FUNCTIONS, NULL, 0x00 },
+  { string_geterror, fn_geterror, 0x00 },
+  { string_throw, fn_throw, 0x11 },
+  { string_intern, fn_intern, 0x11 },
+  { string_not, fn_not, 0x11 },
+  { string_null, fn_not, 0x11 },
+  { string_cons, fn_cons, 0x22 },
+  { string_atom, fn_atom, 0x11 },
+  { string_listp, fn_listp, 0x11 },
+  { string_consp, fn_consp, 0x11 },
+  { string_symbolp, fn_symbolp, 0x11 },
+  { string_arrayp, fn_arrayp, 0x11 },
+  { string_boundp, fn_boundp, 0x11 },
+  { string_set, fn_setfn, 0x2F },
+  { string_streamp, fn_streamp, 0x11 },
+  { string_eq, fn_eq, 0x22 },
+  { string_equal, fn_equal, 0x22 },
+  { string_car, fn_car, 0x11 },
+  { string_first, fn_car, 0x11 },
+  { string_cdr, fn_cdr, 0x11 },
+  { string_rest, fn_cdr, 0x11 },
+  { string_caar, fn_caar, 0x11 },
+  { string_cadr, fn_cadr, 0x11 },
+  { string_second, fn_cadr, 0x11 },
+  { string_cdar, fn_cdar, 0x11 },
+  { string_cddr, fn_cddr, 0x11 },
+  { string_caaar, fn_caaar, 0x11 },
+  { string_caadr, fn_caadr, 0x11 },
+  { string_cadar, fn_cadar, 0x11 },
+  { string_caddr, fn_caddr, 0x11 },
+  { string_third, fn_caddr, 0x11 },
+  { string_cdaar, fn_cdaar, 0x11 },
+  { string_cdadr, fn_cdadr, 0x11 },
+  { string_cddar, fn_cddar, 0x11 },
+  { string_cdddr, fn_cdddr, 0x11 },
+  { string_length, fn_length, 0x11 },
+  { string_arraydimensions, fn_arraydimensions, 0x11 },
+  { string_list, fn_list, 0x0F },
+  { string_makearray, fn_makearray, 0x15 },
+  { string_reverse, fn_reverse, 0x11 },
+  { string_nth, fn_nth, 0x22 },
+  { string_aref, fn_aref, 0x2F },
+  { string_assoc, fn_assoc, 0x22 },
+  { string_member, fn_member, 0x22 },
+  { string_apply, fn_apply, 0x2F },
+  { string_funcall, fn_funcall, 0x1F },
+  { string_append, fn_append, 0x0F },
+  { string_mapc, fn_mapc, 0x2F },
+  { string_mapcar, fn_mapcar, 0x2F },
+  { string_mapcan, fn_mapcan, 0x2F },
+  { string_plus, fn_add, 0x0F },
+  { string_minus, fn_subtract, 0x1F },
+  { string_times, fn_multiply, 0x0F },
+  { string_divide, fn_divide, 0x1F },
+  { string_mod, fn_mod, 0x22 },
+  { string_oneplus, fn_oneplus, 0x11 },
+  { string_oneminus, fn_oneminus, 0x11 },
+  { string_abs, fn_abs, 0x11 },
+  { string_random, fn_random, 0x11 },
+  { string_max, fn_maxfn, 0x1F },
+  { string_min, fn_minfn, 0x1F },
+  { string_noteq, fn_noteq, 0x1F },
+  { string_numeq, fn_numeq, 0x1F },
+  { string_less, fn_less, 0x1F },
+  { string_lesseq, fn_lesseq, 0x1F },
+  { string_greater, fn_greater, 0x1F },
+  { string_greatereq, fn_greatereq, 0x1F },
+  { string_plusp, fn_plusp, 0x11 },
+  { string_minusp, fn_minusp, 0x11 },
+  { string_zerop, fn_zerop, 0x11 },
+  { string_oddp, fn_oddp, 0x11 },
+  { string_evenp, fn_evenp, 0x11 },
+  { string_integerp, fn_integerp, 0x11 },
+  { string_numberp, fn_numberp, 0x11 },
+  { string_float, fn_floatfn, 0x11 },
+  { string_floatp, fn_floatp, 0x11 },
+  { string_sin, fn_sin, 0x11 },
+  { string_cos, fn_cos, 0x11 },
+  { string_tan, fn_tan, 0x11 },
+  { string_asin, fn_asin, 0x11 },
+  { string_acos, fn_acos, 0x11 },
+  { string_atan, fn_atan, 0x12 },
+  { string_sinh, fn_sinh, 0x11 },
+  { string_cosh, fn_cosh, 0x11 },
+  { string_tanh, fn_tanh, 0x11 },
+  { string_exp, fn_exp, 0x11 },
+  { string_sqrt, fn_sqrt, 0x11 },
+  { string_log, fn_log, 0x12 },
+  { string_expt, fn_expt, 0x22 },
+  { string_ceiling, fn_ceiling, 0x12 },
+  { string_floor, fn_floor, 0x12 },
+  { string_truncate, fn_truncate, 0x12 },
+  { string_round, fn_round, 0x12 },
+  { string_char, fn_char, 0x22 },
+  { string_charcode, fn_charcode, 0x11 },
+  { string_codechar, fn_codechar, 0x11 },
+  { string_characterp, fn_characterp, 0x11 },
+  { string_stringp, fn_stringp, 0x11 },
+  { string_stringeq, fn_stringeq, 0x22 },
+  { string_stringlt, fn_stringless, 0x22 },
+  { string_stringgt, fn_stringgreater, 0x22 },
+  { string_sort, fn_sort, 0x22 },
+  { string_string, fn_stringfn, 0x11 },
+  { string_concatenate, fn_concatenate, 0x1F },
+  { string_subseq, fn_subseq, 0x23 },
+  { string_readfromstring, fn_readfromstring, 0x11 },
+  { string_princtostring, fn_princtostring, 0x11 },
+  { string_prin1tostring, fn_prin1tostring, 0x11 },
+  { string_logand, fn_logand, 0x0F },
+  { string_logior, fn_logior, 0x0F },
+  { string_logxor, fn_logxor, 0x0F },
+  { string_lognot, fn_lognot, 0x11 },
+  { string_ash, fn_ash, 0x22 },
+  { string_logbitp, fn_logbitp, 0x22 },
+  { string_eval, fn_eval, 0x11 },
+  { string_globals, fn_globals, 0x00 },
+  { string_locals, fn_locals, 0x00 },
+  { string_makunbound, fn_makunbound, 0x11 },
+  { string_break, fn_break, 0x00 },
+  { string_read, fn_read, 0x01 },
+  { string_prin1, fn_prin1, 0x12 },
+  { string_print, fn_print, 0x12 },
+  { string_princ, fn_princ, 0x12 },
+  { string_terpri, fn_terpri, 0x01 },
+  { string_readbyte, fn_readbyte, 0x02 },
+  { string_readline, fn_readline, 0x01 },
+  { string_writebyte, fn_writebyte, 0x12 },
+  { string_writestring, fn_writestring, 0x12 },
+  { string_writeline, fn_writeline, 0x12 },
+  { string_restarti2c, fn_restarti2c, 0x12 },
+  { string_gc, fn_gc, 0x00 },
+  { string_room, fn_room, 0x00 },
+  { string_saveimage, fn_saveimage, 0x01 },
+  { string_loadimage, fn_loadimage, 0x01 },
+  { string_cls, fn_cls, 0x00 },
+  { string_pinmode, fn_pinmode, 0x22 },
+  { string_digitalread, fn_digitalread, 0x11 },
+  { string_digitalwrite, fn_digitalwrite, 0x22 },
+  { string_analogread, fn_analogread, 0x11 },
+  { string_analogreadresolution, fn_analogreadresolution, 0x11 },
+  { string_analogwrite, fn_analogwrite, 0x22 },
+  { string_delay, fn_delay, 0x11 },
+  { string_millis, fn_millis, 0x00 },
+  { string_sleep, fn_sleep, 0x11 },
+  { string_note, fn_note, 0x03 },
+  { string_register, fn_register, 0x12 },
+  { string_edit, fn_edit, 0x11 },
+  { string_pprint, fn_pprint, 0x12 },
+  { string_pprintall, fn_pprintall, 0x01 },
+  { string_format, fn_format, 0x2F },
+  { string_require, fn_require, 0x11 },
+  { string_listlibrary, fn_listlibrary, 0x00 },
+  { string_available, fn_available, 0x11 },
+  { string_wifiserver, fn_wifiserver, 0x00 },
+  { string_wifisoftap, fn_wifisoftap, 0x04 },
+  { string_connected, fn_connected, 0x11 },
+  { string_wifilocalip, fn_wifilocalip, 0x00 },
+  { string_wificonnect, fn_wificonnect, 0x02 },
+  { string_drawpixel, fn_drawpixel, 0x23 },
+  { string_drawline, fn_drawline, 0x45 },
+  { string_drawrect, fn_drawrect, 0x45 },
+  { string_fillrect, fn_fillrect, 0x45 },
+  { string_drawcircle, fn_drawcircle, 0x34 },
+  { string_fillcircle, fn_fillcircle, 0x34 },
+  { string_drawroundrect, fn_drawroundrect, 0x56 },
+  { string_fillroundrect, fn_fillroundrect, 0x56 },
+  { string_drawtriangle, fn_drawtriangle, 0x67 },
+  { string_filltriangle, fn_filltriangle, 0x67 },
+  { string_drawchar, fn_drawchar, 0x36 },
+  { string_setcursor, fn_setcursor, 0x22 },
+  { string_settextcolor, fn_settextcolor, 0x12 },
+  { string_settextsize, fn_settextsize, 0x11 },
+  { string_settextwrap, fn_settextwrap, 0x11 },
+  { string_fillscreen, fn_fillscreen, 0x01 },
+  { string_setrotation, fn_setrotation, 0x11 },
+  { string_invertdisplay, fn_invertdisplay, 0x11 },
+  { string_SPECIALKEYWORDS, NULL, 0x00 },
+  { string_ledbuiltin, (fn_ptr_type)LED_BUILTIN, 0 },
+  { string_high, (fn_ptr_type)HIGH, DIGITALWRITE },
+  { string_low, (fn_ptr_type)LOW, DIGITALWRITE },
+  { string_input, (fn_ptr_type)INPUT, PINMODE },
+  { string_inputpullup, (fn_ptr_type)INPUT_PULLUP, PINMODE },
+  { string_inputpulldown, (fn_ptr_type)INPUT_PULLDOWN, PINMODE },
+  { string_output, (fn_ptr_type)OUTPUT, PINMODE },
+  { string_USERFUNCTIONS, NULL, 0x00 },
 
 // Insert your own table entries here
+  { string_batteryvoltage, fn_batteryvoltage, 0x00 },
+  { string_batterypercentage, fn_batterypercentage, 0x00 },
+  { string_batterychangerate, fn_batterychangerate, 0x00 },
 
 };
 
@@ -4680,25 +4986,17 @@ void testescape () {
 
 
 object *eval (object *form, object *env) {
-  static unsigned long start = 0;
   int TC=0;
   EVAL:
-#if defined(ESP8266)
-  (void) start;
-  yield();  // Needed on ESP8266 to avoid Soft WDT Reset
-#elif defined(ARDUINO_ESP32C3_DEV)
-  if (millis() - start > 4000) { delay(1); start = millis(); }
-#else
-  (void) start;
-#endif
+  yield();
   // Enough space?
   if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
   // Escape
   if (tstflag(ESCAPE)) { clrflag(ESCAPE); error2(NIL, PSTR("escape!"));}
   if (!tstflag(NOESC)) testescape();
 
+  // Evaluates to itself?
   if (form == NULL) return nil;
-
   if (form->type >= NUMBER && form->type <= STRING) return form;
 
   if (symbolp(form)) {
@@ -4714,6 +5012,7 @@ object *eval (object *form, object *env) {
   // It's a list
   object *function = car(form);
   object *args = cdr(form);
+  object *unevaled_args = cdr(form);
 
   if (function == NULL) error(NIL, PSTR("illegal function"), nil);
   if (!listp(args)) error(NIL, PSTR("can't evaluate a dotted pair"), args);
@@ -4778,8 +5077,13 @@ object *eval (object *form, object *env) {
   form = cdr(form);
   int nargs = 0;
 
-  while (form != NULL){
-    object *obj = cons(eval(car(form),env),NULL);
+  // bool is_macro = consp(car(head)) && (isbuiltin(car(car(head)), MACRO));
+
+  while (form != NULL) {
+    object *obj;
+    // don't evaluate args to a macro
+    // if (is_macro) obj = cons(car(form),NULL);
+    /*else */obj = cons(eval(car(form),env),NULL);
     cdr(tail) = obj;
     tail = obj;
     form = cdr(form);
@@ -4828,6 +5132,37 @@ object *eval (object *form, object *env) {
       goto EVAL;
     }
 
+  }
+  if (consp(function) && (isbuiltin(car(function), MACRO))) {
+    // has the form (MACRO (param...) expr...)
+    object *definition = cdr(function);
+    object *params = car(definition);
+    object *body = car(cdr(definition));
+    // Serial.print("Macro: params: ");
+    // printobject(params, pserial);
+    // Serial.print(" - args: ");
+    // printobject(args, pserial);
+    // Serial.print(" - body: ");
+    // printobject(body, pserial);
+    // Serial.println();
+    object *newenv = env;
+    push(newenv, GCStack);
+    object *p;
+    object *a;
+    for (p = params, a = unevaled_args; p != NULL; p = cdr(p), a = cdr(a)) {
+      if (isbuiltin(car(p), AMPREST)) {
+        push(cons(car(cdr(p)), a), newenv);
+        car(GCStack) = newenv;
+        break;
+      } else {
+        push(cons(car(p), eval(car(a), env)), newenv);
+        // push(cons(car(p), car(a)), newenv);
+        car(GCStack) = newenv;
+      }
+    }
+    form = expand(body, newenv);
+    pop(GCStack);
+    goto EVAL;
   }
   error(NIL, PSTR("illegal function"), fname); return nil;
 }
@@ -4933,11 +5268,11 @@ void pint (int i, pfun_t pfun) {
 }
 
 void pintbase (uint32_t i, uint8_t base, pfun_t pfun) {
-  int lead = 0; uint32_t p = 1000000000;
+  bool lead = false; uint32_t p = 1000000000;
   if (base == 2) p = 0x80000000; else if (base == 16) p = 0x10000000;
-  for (uint32_t d=p; d>0; d=d/base) {
+  for (uint32_t d = p; d > 0; d /= base) {
     uint32_t j = i/d;
-    if (j!=0 || lead || d==1) { pfun((j<10) ? j+'0' : j+'W'); lead=1;}  
+    if (j != 0 || lead || d == 1) { pfun((j<10) ? j+'0' : j+'W'); lead = true; }
     i = i - j*d;
   }
 }
@@ -4972,8 +5307,8 @@ void pmantissa (float f, pfun_t pfun) {
 void pfloat (float f, pfun_t pfun) {
   if (isnan(f)) { pfstring(PSTR("NaN"), pfun); return; }
   if (f == 0.0) { pfun('0'); return; }
-  if (isinf(f)) { pfstring(PSTR("Inf"), pfun); return; }
   if (f < 0) { pfun('-'); f = -f; }
+  if (isinf(f)) { pfstring(PSTR("Infinity"), pfun); return; }
   // Calculate exponent
   int e = 0;
   if (f < 1e-3 || f >= 1e5) {
@@ -5180,17 +5515,31 @@ int gserial () {
 
 object *nextitem (gfun_t gfun) {
   int ch = gfun();
-  while(issp(ch)) ch = gfun();
+  while (issp(ch)) ch = gfun();
 
-  if (ch == ';') {
-    do { ch = gfun(); if (ch == ';' || ch == '(') setflag(NOECHO); }
-    while(ch != '(');
+  while (ch == ';') {           // handle multiple comment lines
+    ch = gfun();
+    while (ch != '\n' && ch != -1) {
+      ch = gfun();
+    }
+    while (issp(ch)) {
+      ch = gfun();
+    }
   }
   if (ch == '\n') ch = gfun();
-  if (ch == -1) return nil;
+  if (ch == -1 || ch == '\0') return nil;
   if (ch == ')') return (object *)KET;
   if (ch == '(') return (object *)BRA;
   if (ch == '\'') return (object *)QUO;
+  if (ch == '`') return (object *)BACKTICK;
+  if (ch == ',') {
+    ch = gfun();
+    if (ch == '@') return (object *)COMMAAT;
+    else {
+      LastChar = ch;
+      return (object *)COMMA;
+    }
+  }
 
   // Parse string
   if (ch == '"') return readstring('"', gfun);
@@ -5252,7 +5601,7 @@ object *nextitem (gfun_t gfun) {
   buffer[2] = '\0'; buffer[3] = '\0'; buffer[4] = '\0'; buffer[5] = '\0'; // In case symbol is < 5 letters
   float divisor = 10.0;
 
-  while(!issp(ch) && ch != ')' && ch != '(' && index < bufmax) {
+  while (!issp(ch) && ch != ')' && ch != '(' && index < bufmax) {
     buffer[index++] = ch;
     if (base == 10 && ch == '.' && !isexponent) {
       isfloat = true;
@@ -5300,9 +5649,21 @@ object *nextitem (gfun_t gfun) {
   builtin_t x = lookupbuiltin(buffer);
   if (x == NIL) return nil;
   if (x != ENDFUNCTIONS) return bsymbol(x);
-  else if ((index <= 6) && valid40(buffer)) return intern(twist(pack40(buffer)));
-  buffer[index+1] = '\0'; buffer[index+2] = '\0'; buffer[index+3] = '\0'; // For internlong
-  return internlong(buffer);
+  object *sym;
+  if ((index <= 6) && valid40(buffer)) sym = intern(twist(pack40(buffer)));
+  else {
+    buffer[index+1] = '\0'; buffer[index+2] = '\0'; buffer[index+3] = '\0'; // For internlong
+    sym = internlong(buffer);
+  }
+  if (buffer[0] == ':') { // handle keywords
+    bool found = false;
+    if (lookupbuiltin(buffer) != ENDFUNCTIONS) found = true;
+    for (object *e = GlobalEnv; e != nil && !found; e = cdr(e)) {
+      if (car(car(e)) == sym) found = true;
+    }
+    if (!found) push(cons(sym, sym), GlobalEnv);
+  }
+  return sym;
 }
 
 object *readrest (gfun_t gfun) {
@@ -5315,6 +5676,12 @@ object *readrest (gfun_t gfun) {
       item = readrest(gfun);
     } else if (item == (object *)QUO) {
       item = cons(bsymbol(QUOTE), cons(read(gfun), NULL));
+    } else if (item == (object *)BACKTICK) {
+      item = cons(bsymbol(QUASIQUOTE), cons(read(gfun), NULL));
+    } else if (item == (object *)COMMA) {
+      item = cons(bsymbol(UNQUOTE), cons(read(gfun), NULL));
+    } else if (item == (object *)COMMAAT) {
+      item = cons(bsymbol(UNQUOTESPLICING), cons(read(gfun), NULL));
     } else if (item == (object *)DOT) {
       tail->cdr = read(gfun);
       if (readrest(gfun) != NULL) error2(NIL, PSTR("malformed list"));
@@ -5336,6 +5703,9 @@ object *read (gfun_t gfun) {
   if (item == (object *)BRA) return readrest(gfun);
   if (item == (object *)DOT) return read(gfun);
   if (item == (object *)QUO) return cons(bsymbol(QUOTE), cons(read(gfun), NULL));
+  if (item == (object *)BACKTICK) return cons(bsymbol(QUASIQUOTE), cons(read(gfun), NULL));
+  if (item == (object *)COMMA) return cons(bsymbol(UNQUOTE), cons(read(gfun), NULL));
+  if (item == (object *)COMMAAT) return cons(bsymbol(UNQUOTESPLICING), cons(read(gfun), NULL));
   return item;
 }
 
@@ -5355,15 +5725,54 @@ void initenv () {
   tee = bsymbol(TEE);
 }
 
-void setup () {
-  Serial.begin(9600);
-  int start = millis();
-  while ((millis() - start) < 5000) { if (Serial) break; }
+#if defined(runfromsd)
+const char SDMain[] PROGMEM = "(with-sd-card (file \"" sdmainfile "\") (loop (let ((form (read file))) (unless form (return)) (eval form))))";
+int SDMainIndex = 0;
+
+int gsdmain() {
+  if (LastChar) {
+    char temp = LastChar;
+    LastChar = 0;
+    return temp;
+  }
+  char c = pgm_read_byte(&SDMain[SDMainIndex++]);
+  return (c != 0) ? c : -1; // -1?
+}
+
+void sdmain() {
+    SD.begin();
+    if (ulisp_setup_error_handling()) return;
+    object *line = read(gsdmain);
+    push(line, GCStack);
+    (void)eval(line, NULL);
+    pop(GCStack);
+}
+#endif
+
+bool ulisp_setup_error_handling() {
+  if (setjmp(toplevel_errorbuffer)) return true;
+  return false;
+}
+
+void ulisp_init() {
   initworkspace();
   initenv();
   initsleep();
   initgfx();
-  pfstring(PSTR("uLisp 4.0 "), pserial); pln(pserial);
+}
+
+void setup () {
+  Serial.begin(9600);
+  Wire.begin();
+  if (battery.begin() == false) { // Connect to the MAX17048 using the default wire port
+    pfstring(PSTR("Error setting up battery gauge IC"), pserial);
+    while (1);
+  }
+  ulisp_init();
+  #if defined(runfromsd)
+  sdmain();
+  #endif
+  pfstring(PSTR("\n\nuLisp 4.0 "), pserial); pln(pserial);
 }
 
 // Read/Evaluate/Print loop
@@ -5395,7 +5804,7 @@ void repl (object *env) {
 }
 
 void loop () {
-  if (!setjmp(exception)) {
+  if (!ulisp_setup_error_handling()) {
     #if defined(resetautorun)
     volatile int autorun = 12; // Fudge to keep code size the same
     #else
