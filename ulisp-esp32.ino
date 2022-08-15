@@ -5661,9 +5661,7 @@ object *nextitem (gfun_t gfun) {
     sym = internlong(buffer);
   }
   if (buffer[0] == ':') { // handle keywords
-    bool found = false;
-    if (lookupbuiltin(buffer) != ENDFUNCTIONS) found = true;
-    if (!found) sym = cons(bsymbol(QUOTE), cons(sym, nil)); // keywords quote themselves
+    if (!lookupbuiltin(buffer) != ENDFUNCTIONS) sym = cons(bsymbol(QUOTE), cons(sym, nil)); // keywords quote themselves
   }
   return sym;
 }
