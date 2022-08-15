@@ -221,6 +221,7 @@ jmp_buf toplevel_errorbuffer;
 jmp_buf *errorbuffer = &toplevel_errorbuffer;
 unsigned int Freespace = 0;
 object *Freelist;
+bool okaytogc = true;
 unsigned int I2CCount;
 unsigned int TraceFn[TRACEMAX];
 unsigned int TraceDepth[TRACEMAX];
@@ -497,6 +498,7 @@ unsigned int GCCount = 0;
 #endif
 
 void gc (object *form, object *env) {
+  if (!okaytogc) return;
   #if defined(printgcs)
   int start = Freespace;
   #endif
