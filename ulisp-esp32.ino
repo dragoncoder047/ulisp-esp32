@@ -5663,9 +5663,6 @@ object *nextitem (gfun_t gfun) {
   if (buffer[0] == ':') { // handle keywords
     bool found = false;
     if (lookupbuiltin(buffer) != ENDFUNCTIONS) found = true;
-    for (object *e = GlobalEnv; e != nil && !found; e = cdr(e)) {
-      if (car(car(e)) == sym) found = true;
-    }
     if (!found) sym = cons(bsymbol(QUOTE), cons(sym, nil)); // keywords quote themselves
   }
   return sym;
