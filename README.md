@@ -2,7 +2,7 @@
 
 A version of the Lisp programming language for ESP32-based boards.
 
-For more information see http://www.ulisp.com/show?21T5
+For more information see http://www.ulisp.com/show?2AJI
 
 Patches from original:
 
