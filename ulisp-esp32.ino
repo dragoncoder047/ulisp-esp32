@@ -5666,7 +5666,7 @@ object *nextitem (gfun_t gfun) {
     for (object *e = GlobalEnv; e != nil && !found; e = cdr(e)) {
       if (car(car(e)) == sym) found = true;
     }
-    if (!found) push(cons(sym, sym), GlobalEnv);
+    if (!found) sym = cons(bsymbol(QUOTE), cons(sym, nil)); // keywords quote themselves
   }
   return sym;
 }
