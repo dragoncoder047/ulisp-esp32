@@ -221,7 +221,6 @@ jmp_buf toplevel_errorbuffer;
 jmp_buf *errorbuffer = &toplevel_errorbuffer;
 unsigned int Freespace = 0;
 object *Freelist;
-bool okaytogc = true;
 unsigned int I2CCount;
 unsigned int TraceFn[TRACEMAX];
 unsigned int TraceDepth[TRACEMAX];
@@ -239,8 +238,8 @@ char LastChar = 0;
 char LastPrint = 0;
 
 // Flags
-enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS };
-volatile uint8_t Flags = 0b00001; // PRINTREADABLY set by default
+enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS, DISABLEGC };
+volatile uint16_t Flags = 0b00001; // PRINTREADABLY set by default
 
 // Forward references
 object *tee;
@@ -498,7 +497,7 @@ unsigned int GCCount = 0;
 #endif
 
 void gc (object *form, object *env) {
-  if (!okaytogc) return;
+  if (tstflag(DISABLEGC)) return;
   #if defined(printgcs)
   int start = Freespace;
   #endif
@@ -1709,7 +1708,7 @@ void superprint (object *form, int lm, pfun_t pfun) {
   else supersub(form, lm + PPINDENT, 1, pfun);
 }
 
-const int ppspecials = 19;
+const int ppspecials = 18;
 const char ppspecial[ppspecials] PROGMEM =
   { DOTIMES, DOLIST, IF, SETQ, TEE, LET, LETSTAR, LAMBDA, WHEN, UNLESS, WITHI2C, WITHSERIAL, WITHSPI, WITHSDCARD, FORMILLIS, WITHCLIENT, UNWINDPROTECT, IGNOREERRORS/*, SP_ERROR*/ };
 
