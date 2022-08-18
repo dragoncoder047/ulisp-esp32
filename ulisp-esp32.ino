@@ -5538,6 +5538,7 @@ object *nextitem (gfun_t gfun) {
   if (ch == '(') return (object *)BRA;
   if (ch == '\'') return (object *)QUO;
   if (ch == '`') return (object *)BACKTICK;
+  if (ch == '@') return (object *)COMMAAT;
   if (ch == ',') {
     ch = gfun();
     if (ch == '@') return (object *)COMMAAT;
