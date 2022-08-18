@@ -15,6 +15,12 @@
    * battery:voltage, battery:percentage, battery:change-rate (reading from the MAX17048 on a Thing Plus C)
    
 */
+/* Test MACRO with
+
+(defmacro foo (aa bb) `(defmacro ,aa () `(princ ,,bb)))
+(foo 'bar "baz")
+
+*/
 
 // Lisp Library
 // const char LispLibrary[] PROGMEM = "";
@@ -2345,21 +2351,27 @@ object *process_quasiquoted (object *expr, int level, object *env) {
 
   if (isbuiltin(car(expr), QUASIQUOTE)) {
     // Serial.println("nested quasiquote");
+    push(second(expr),GCStack);
     object *processed = process_quasiquoted(second(expr), level + 1, env);
+    pop(GCStack);
     return cons(cons(symbol(QUASIQUOTE), processed), NULL);
   } else if (isbuiltin(car(expr), UNQUOTE)) {
     // Serial.println("**** Processing UNQUOTE");
     // Serial.print("**** At level ");
     // Serial.println(level);
     if (level == 1) {
+      push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
       object *result = eval(car(processed), env);
       // Serial.print("**** Result: ");
       // printobject(result, pserial);
       // Serial.println();
+      pop(GCStack);
       return cons(result, NULL);
     } else {
+      push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level - 1, env);
+      pop(GCStack);
       return cons(cons(symbol(UNQUOTE), processed), NULL);
     }
   } else if (isbuiltin(car(expr), UNQUOTESPLICING)) {
@@ -2367,6 +2379,7 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     // Serial.print("**** At level ");
     // Serial.println(level);
     if (level == 1) {
+      push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
       // Serial.print("**** Processed: ");
       // printobject(car(processed), pserial);
@@ -2375,10 +2388,13 @@ object *process_quasiquoted (object *expr, int level, object *env) {
       // Serial.print("**** Result: ");
       // printobject(result, pserial);
       // Serial.println();
+      pop(GCStack);
       if (result == nil) return ATNOTHINGS;     // sentinel to signal that @... should insert nothing (i.e. empty list)
       else return result;
     } else {
+      push(second(expr), GCStack);
       object *processed = process_quasiquoted(second(expr), level - 1, env);
+      pop(GCstack);
       return cons(cons(symbol(UNQUOTESPLICING), processed), NULL);
     }
   } else {
@@ -2388,7 +2404,9 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     object *parts = NULL;
     push(parts, GCStack);
     for (object *cell = expr; cell != NULL; cell = cdr(cell)) {
+      push(car(cell), GCStack);
       object *processed = process_quasiquoted(car(cell), level, env);
+      pop(GCStack);
       if (processed != ATNOTHINGS) { // Check for empty list insertion sentinel
         push(processed, parts);
       }
