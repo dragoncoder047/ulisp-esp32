@@ -2563,7 +2563,10 @@ object *fn_throw (object *args, object *env) {
   object *message = first(args);
   if (!stringp(message)) error(THROW, notastring, message);
   if (!tstflag(MUFFLEERRORS)) {
+    uint16_t temp = Flags;
+    clrflag(PRINTREADABLY);
     pfstring(PSTR("Error: "), pserial); printstring(message, pserial);
+    Flags = temp;
     pln(pserial);
   }
   GlobalErrorString = message;
@@ -3755,7 +3758,7 @@ object *fn_writestring (object *args, object *env) {
   (void) env;
   object *obj = first(args);
   pfun_t pfun = pstreamfun(cdr(args));
-  char temp = Flags;
+  uint16_t temp = Flags;
   clrflag(PRINTREADABLY);
   printstring(obj, pfun);
   Flags = temp;
@@ -3766,7 +3769,7 @@ object *fn_writeline (object *args, object *env) {
   (void) env;
   object *obj = first(args);
   pfun_t pfun = pstreamfun(cdr(args));
-  char temp = Flags;
+  uint16_t temp = Flags;
   clrflag(PRINTREADABLY);
   printstring(obj, pfun);
   pln(pfun);
@@ -5378,7 +5381,7 @@ void printobject (object *form, pfun_t pfun) {
 }
 
 void prin1object (object *form, pfun_t pfun) {
-  char temp = Flags;
+  uint16_t temp = Flags;
   clrflag(PRINTREADABLY);
   printobject(form, pfun);
   Flags = temp;
