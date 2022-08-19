@@ -2277,7 +2277,7 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     } else {
       push(second(expr), GCStack);
       object *processed = process_quasiquoted(second(expr), level - 1, env);
-      pop(GCstack);
+      pop(GCStack);
       return cons(cons(symbol(UNQUOTESPLICING), processed), NULL);
     }
   } else {
