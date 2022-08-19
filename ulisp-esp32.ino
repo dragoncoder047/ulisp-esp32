@@ -627,7 +627,6 @@ int EpromReadInt (int *addr) {
 #endif
 
 unsigned int saveimage (object *arg) {
-#if defined(sdcardsupport)
   unsigned int imagesize = compactimage(&arg);
   SD.begin();
   File file;
@@ -649,57 +648,9 @@ unsigned int saveimage (object *arg) {
   }
   file.close();
   return imagesize;
-#elif defined(LITTLEFS)
-  unsigned int imagesize = compactimage(&arg);
-  if (!LittleFS.begin(true)) error2(SAVEIMAGE, PSTR("problem mounting LittleFS"));
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = LittleFS.open(MakeFilename(arg, buffer), "w");
-    if (!file) error2(SAVEIMAGE, PSTR("problem saving to LittleFS or invalid filename"));
-    arg = NULL;
-  } else if (arg == NULL || listp(arg)) {
-    file = LittleFS.open(autorunimagepath, "w");
-    if (!file) error2(SAVEIMAGE, PSTR("problem saving to LittleFS"));
-  } else error(SAVEIMAGE, invalidarg, arg);
-  FSWrite32(file, (uintptr_t)arg);
-  FSWrite32(file, imagesize);
-  FSWrite32(file, (uintptr_t)GlobalEnv);
-  FSWrite32(file, (uintptr_t)GCStack);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    FSWrite32(file, (uintptr_t)car(obj));
-    FSWrite32(file, (uintptr_t)cdr(obj));
-  }
-  file.close();
-  return imagesize;
-#elif defined(EEPROMSIZE)
-  unsigned int imagesize = compactimage(&arg);
-  if (!(arg == NULL || listp(arg))) error(SAVEIMAGE, PSTR("illegal argument"), arg);
-  int bytesneeded = imagesize*8 + 36;
-  if (bytesneeded > EEPROMSIZE) error(SAVEIMAGE, PSTR("image too large"), number(imagesize));
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  EpromWriteInt(&addr, (uintptr_t)arg);
-  EpromWriteInt(&addr, imagesize);
-  EpromWriteInt(&addr, (uintptr_t)GlobalEnv);
-  EpromWriteInt(&addr, (uintptr_t)GCStack);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    EpromWriteInt(&addr, (uintptr_t)car(obj));
-    EpromWriteInt(&addr, (uintptr_t)cdr(obj));
-  }
-  EEPROM.commit();
-  return imagesize;
-#else
-  (void) arg;
-  error2(SAVEIMAGE, PSTR("not available"));
-  return 0;
-#endif
 }
 
 unsigned int loadimage (object *arg) {
-#if defined(sdcardsupport)
   SD.begin();
   File file;
   char buffer[BUFFERSIZE];
@@ -719,56 +670,9 @@ unsigned int loadimage (object *arg) {
   file.close();
   gc(NULL, NULL);
   return imagesize;
-#elif defined(LITTLEFS)
-  if (!LittleFS.begin()) error2(LOADIMAGE, PSTR("problem mounting LittleFS"));
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = LittleFS.open(MakeFilename(arg, buffer), "r");
-    if (!file) error2(LOADIMAGE, PSTR("problem loading from LittleFS or invalid filename"));
-  }
-  else if (arg == NULL) {
-    file = LittleFS.open(autorunimagepath, "r");
-    if (!file) error2(LOADIMAGE, PSTR("problem loading from LittleFS"));
-  }
-  else error(LOADIMAGE, invalidarg, arg);
-  FSRead32(file);
-  unsigned int imagesize = FSRead32(file);
-  GlobalEnv = (object *)FSRead32(file);
-  GCStack = (object *)FSRead32(file);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    car(obj) = (object *)FSRead32(file);
-    cdr(obj) = (object *)FSRead32(file);
-  }
-  file.close();
-  gc(NULL, NULL);
-  return imagesize;
-#elif defined(EEPROMSIZE)
-  (void) arg;
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  EpromReadInt(&addr); // Skip eval address
-  unsigned int imagesize = EpromReadInt(&addr);
-  if (imagesize == 0 || imagesize == 0xFFFFFFFF) error2(LOADIMAGE, PSTR("no saved image"));
-  GlobalEnv = (object *)EpromReadInt(&addr);
-  GCStack = (object *)EpromReadInt(&addr);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    car(obj) = (object *)EpromReadInt(&addr);
-    cdr(obj) = (object *)EpromReadInt(&addr);
-  }
-  gc(NULL, NULL);
-  return imagesize;
-#else
-  (void) arg;
-  error2(LOADIMAGE, PSTR("not available"));
-  return 0;
-#endif
 }
 
 void autorunimage () {
-#if defined(sdcardsupport)
   SD.begin();
   File file = SD.open(autorunimagepath);
   if (!file) error2(NIL, PSTR("problem autorunning from SD card image"));
@@ -778,27 +682,6 @@ void autorunimage () {
     loadimage(NULL);
     apply(NIL, autorun, NULL, NULL);
   }
-#elif defined(LITTLEFS)
-  if (!LittleFS.begin()) error2(NIL, PSTR("problem mounting LittleFS"));
-  File file = LittleFS.open(autorunimagepath, "r");
-  if (!file) error2(NIL, PSTR("problem autorunning from LittleFS"));
-  object *autorun = (object *)FSRead32(file);
-  file.close();
-  if (autorun != NULL) {
-    loadimage(NULL);
-    apply(NIL, autorun, NULL, NULL);
-  }
-#elif defined(EEPROMSIZE)
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  object *autorun = (object *)EpromReadInt(&addr);
-  if (autorun != NULL && (unsigned int)autorun != 0xFFFF) {
-    loadimage(NULL);
-    apply(NIL, autorun, NULL, NULL);
-  }
-#else
-  error2(NIL, PSTR("autorun not available"));
-#endif
 }
 
 // Tracing
@@ -2478,7 +2361,7 @@ object *sp_expand (object *args, object *env) {
   object *a;
   for (p = params, a = cdr(args); p != NULL; p = cdr(p), a = cdr(a)) {
     if (isbuiltin(car(p), AMPREST)) {
-      push(cons(car(cdr(p)), a), newenv);
+      push(cons(second(p), a), newenv);
       car(GCStack) = newenv;
       break;
     } else {
@@ -5017,7 +4900,7 @@ object *eval (object *form, object *env) {
   EVAL:
   yield();
   // Enough space?
-  if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
+//  if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
   // Escape
   if (tstflag(ESCAPE)) { clrflag(ESCAPE); error2(NIL, PSTR("escape!"));}
   if (!tstflag(NOESC)) testescape();
@@ -5804,7 +5687,7 @@ void setup () {
 void repl (object *env) {
   for (;;) {
     randomSeed(micros());
-    gc(NULL, env);
+//    gc(NULL, env);
     #if defined (printfreespace)
     pint(Freespace, pserial);
     #endif
