@@ -732,8 +732,8 @@ bool listp (object *x) {
 
 #define improperp(x) (!listp(x))
 
-object *quote (object *arg) {
-  return cons(bsymbol(QUOTE), cons(arg,NULL));
+object *quoteit (builtin_t quoter, object *it) {
+  return cons(bsymbol(quoter), cons(it, nil));
 }
 
 // Radix 40 encoding
@@ -2403,7 +2403,7 @@ object *tf_cond (object *args, object *env) {
     object *test = eval(first(clause), env);
     object *forms = cdr(clause);
     if (test != nil) {
-      if (forms == NULL) return quote(test); else return tf_progn(forms, env);
+      if (forms == NULL) return quoteit(QUOTE, test); else return tf_progn(forms, env);
     }
     args = cdr(args);
   }
@@ -3904,7 +3904,7 @@ object *fn_pprintall (object *args, object *env) {
     if (consp(val) && symbolp(car(val)) && builtin(car(val)->name) == LAMBDA) {
       superprint(cons(bsymbol(DEFUN), cons(var, cdr(val))), 0, pfun);
     } else {
-      superprint(cons(bsymbol(DEFVAR), cons(var, cons(quote(val), NULL))), 0, pfun);
+      superprint(cons(bsymbol(DEFVAR), cons(var, cons(quoteit(QUOTE, val), NULL))), 0, pfun);
     }
     pln(pfun);
     testescape();
@@ -5570,7 +5570,7 @@ object *nextitem (gfun_t gfun) {
   }
   if (buffer[0] == ':') { // handle keywords
     if (lookupbuiltin(buffer) == ENDFUNCTIONS) // make sure it isn't a special keyword
-      sym = cons(bsymbol(QUOTE), cons(sym, nil)); // keywords quote themselves
+      sym = quoteit(QUOTE, sym); // keywords quote themselves
   }
   return sym;
 }
@@ -5584,13 +5584,13 @@ object *readrest (gfun_t gfun) {
     if (item == (object *)BRA) {
       item = readrest(gfun);
     } else if (item == (object *)QUO) {
-      item = cons(bsymbol(QUOTE), cons(read(gfun), NULL));
+      item = quoteit(QUOTE, read(gfun));
     } else if (item == (object *)BACKTICK) {
-      item = cons(bsymbol(QUASIQUOTE), cons(read(gfun), NULL));
+      item = quoteit(QUASIQUOTE, read(gfun));
     } else if (item == (object *)COMMA) {
-      item = cons(bsymbol(UNQUOTE), cons(read(gfun), NULL));
+      item = quoteit(UNQUOTE, read(gfun));
     } else if (item == (object *)COMMAAT) {
-      item = cons(bsymbol(UNQUOTESPLICING), cons(read(gfun), NULL));
+      item = quoteit(UNQUOTESPLICING, read(gfun));
     } else if (item == (object *)DOT) {
       tail->cdr = read(gfun);
       if (readrest(gfun) != NULL) error2(NIL, PSTR("malformed list"));
@@ -5611,10 +5611,10 @@ object *read (gfun_t gfun) {
   if (item == (object *)KET) error2(NIL, PSTR("incomplete list"));
   if (item == (object *)BRA) return readrest(gfun);
   if (item == (object *)DOT) return read(gfun);
-  if (item == (object *)QUO) return cons(bsymbol(QUOTE), cons(read(gfun), NULL));
-  if (item == (object *)BACKTICK) return cons(bsymbol(QUASIQUOTE), cons(read(gfun), NULL));
-  if (item == (object *)COMMA) return cons(bsymbol(UNQUOTE), cons(read(gfun), NULL));
-  if (item == (object *)COMMAAT) return cons(bsymbol(UNQUOTESPLICING), cons(read(gfun), NULL));
+  if (item == (object *)QUO) return quoteit(QUOTE, read(gfun));
+  if (item == (object *)BACKTICK) return quoteit(QUASIQUOTE, read(gfun));
+  if (item == (object *)COMMA) return quoteit(UNQUOTE, read(gfun));
+  if (item == (object *)COMMAAT) return quoteit(UNQUOTESPLICING, read(gfun));
   return item;
 }
 
