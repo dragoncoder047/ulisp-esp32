@@ -4900,7 +4900,7 @@ object *eval (object *form, object *env) {
   EVAL:
   yield();
   // Enough space?
-//  if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
+  if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
   // Escape
   if (tstflag(ESCAPE)) { clrflag(ESCAPE); error2(NIL, PSTR("escape!"));}
   if (!tstflag(NOESC)) testescape();
@@ -5689,7 +5689,7 @@ void setup () {
 void repl (object *env) {
   for (;;) {
     randomSeed(micros());
-//    gc(NULL, env);
+    gc(NULL, env);
     #if defined (printfreespace)
     pint(Freespace, pserial);
     #endif
