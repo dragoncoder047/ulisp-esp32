@@ -2225,30 +2225,30 @@ object *reverse_and_flatten (object *expr) {
 #define ATNOTHINGS (object*)-1
 
 object *process_quasiquoted (object *expr, int level, object *env) {
-   Serial.print("**** Processing quasiquote of : ");
-   printobject(expr, pserial);
-   Serial.println();
-   Serial.print("**** at level ");
-   Serial.println(level);
+  // Serial.print("**** Processing quasiquote of : ");
+  // printobject(expr, pserial);
+  // Serial.println();
+  // Serial.print("**** at level ");
+  // Serial.println(level);
   if (!consp(expr)) return cons(expr, NULL);
 
   if (isbuiltin(car(expr), QUASIQUOTE)) {
-     Serial.println("nested quasiquote");
+    // Serial.println("nested quasiquote");
     push(second(expr),GCStack);
     object *processed = process_quasiquoted(second(expr), level + 1, env);
     pop(GCStack);
     return cons(cons(symbol(QUASIQUOTE), processed), NULL);
   } else if (isbuiltin(car(expr), UNQUOTE)) {
-     Serial.println("**** Processing UNQUOTE");
-     Serial.print("**** At level ");
-     Serial.println(level);
+    // Serial.println("**** Processing UNQUOTE");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
     if (level == 1) {
       push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
       object *result = eval(car(processed), env);
-       Serial.print("**** Result: ");
-       printobject(result, pserial);
-       Serial.println();
+      // Serial.print("**** Result: ");
+      // printobject(result, pserial);
+      // Serial.println();
       pop(GCStack);
       return cons(result, NULL);
     } else {
@@ -2258,19 +2258,19 @@ object *process_quasiquoted (object *expr, int level, object *env) {
       return cons(cons(symbol(UNQUOTE), processed), NULL);
     }
   } else if (isbuiltin(car(expr), UNQUOTESPLICING)) {
-     Serial.println("**** Processing UNQUOTESPLICING");
-     Serial.print("**** At level ");
-     Serial.println(level);
+    // Serial.println("**** Processing UNQUOTESPLICING");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
     if (level == 1) {
       push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
-       Serial.print("**** Processed: ");
-       printobject(car(processed), pserial);
-       Serial.println();
+      // Serial.print("**** Processed: ");
+      // printobject(car(processed), pserial);
+      // Serial.println();
       object *result = eval(car(processed), env);
-       Serial.print("**** Result: ");
-       printobject(result, pserial);
-       Serial.println();
+      // Serial.print("**** Result: ");
+      // printobject(result, pserial);
+      // Serial.println();
       pop(GCStack);
       if (result == nil) return ATNOTHINGS;     // sentinel to signal that @... should insert nothing (i.e. empty list)
       else return result;
@@ -2281,9 +2281,9 @@ object *process_quasiquoted (object *expr, int level, object *env) {
       return cons(cons(symbol(UNQUOTESPLICING), processed), NULL);
     }
   } else {
-     Serial.println("Processing something else");
-     Serial.print("**** At level ");
-     Serial.println(level);
+    // Serial.println("Processing something else");
+    // Serial.print("**** At level ");
+    // Serial.println(level);
     object *parts = NULL;
     push(parts, GCStack);
     for (object *cell = expr; cell != NULL; cell = cdr(cell)) {
@@ -2294,14 +2294,14 @@ object *process_quasiquoted (object *expr, int level, object *env) {
         push(processed, parts);
       }
     }
-     Serial.print("**** parts: ");
-     printobject(parts, pserial);
-     Serial.println();
+    // Serial.print("**** parts: ");
+    // printobject(parts, pserial);
+    // Serial.println();
 
     object *result = reverse_and_flatten(parts);
-     Serial.print("**** Result: ");
-     printobject(result, pserial);
-     Serial.println();
+    // Serial.print("**** Result: ");
+    // printobject(result, pserial);
+    // Serial.println();
     pop(GCStack);
     return cons(result, NULL);
   }
@@ -5048,6 +5048,7 @@ object *eval (object *form, object *env) {
     object *definition = cdr(function);
     object *params = car(definition);
     object *body = car(cdr(definition));
+    push(unevaled_args,GCStack);
     // Serial.print("Macro: params: ");
     // printobject(params, pserial);
     // Serial.print(" - args: ");
@@ -5071,6 +5072,7 @@ object *eval (object *form, object *env) {
       }
     }
     form = expand(body, newenv);
+    pop(GCStack);
     pop(GCStack);
     goto EVAL;
   }
