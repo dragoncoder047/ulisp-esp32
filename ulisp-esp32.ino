@@ -4688,6 +4688,7 @@ STRINGER(batterypercentage, "battery:percentage")
 STRINGER(batterychangerate, "battery:change-rate")
 
 // Documentation strings
+// TODO: insert these into table
 /*
 const char doc0[] PROGMEM = "nil\n"
 "A symbol equivalent to the empty list (). Also represents false.";
