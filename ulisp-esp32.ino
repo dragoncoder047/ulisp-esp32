@@ -604,7 +604,6 @@ char *MakeFilename (object *arg, char *buffer) {
 
 // Save-image and load-image
 
-#if defined(sdcardsupport)
 void SDWriteInt (File file, int data) {
   file.write(data & 0xFF); file.write(data>>8 & 0xFF);
   file.write(data>>16 & 0xFF); file.write(data>>24 & 0xFF);
@@ -615,30 +614,6 @@ int SDReadInt (File file) {
   uintptr_t b2 = file.read(); uintptr_t b3 = file.read();
   return b0 | b1<<8 | b2<<16 | b3<<24;
 }
-#elif defined(LITTLEFS)
-void FSWrite32 (File file, uint32_t data) {
-  union { uint32_t data2; uint8_t u8[4]; };
-  data2 = data;
-  if (file.write(u8, 4) != 4) error2(SAVEIMAGE, PSTR("not enough room"));
-}
-
-uint32_t FSRead32 (File file) {
-  union { uint32_t data; uint8_t u8[4]; };
-  file.read(u8, 4);
-  return data;
-}
-#else
-void EpromWriteInt(int *addr, uintptr_t data) {
-  EEPROM.write((*addr)++, data & 0xFF); EEPROM.write((*addr)++, data>>8 & 0xFF);
-  EEPROM.write((*addr)++, data>>16 & 0xFF); EEPROM.write((*addr)++, data>>24 & 0xFF);
-}
-
-int EpromReadInt (int *addr) {
-  uint8_t b0 = EEPROM.read((*addr)++); uint8_t b1 = EEPROM.read((*addr)++);
-  uint8_t b2 = EEPROM.read((*addr)++); uint8_t b3 = EEPROM.read((*addr)++);
-  return b0 | b1<<8 | b2<<16 | b3<<24;
-}
-#endif
 
 unsigned int saveimage (object *arg) {
   unsigned int imagesize = compactimage(&arg);
