@@ -5174,7 +5174,7 @@ const char doc220[] PROGMEM = "(invert-display boolean)\n"
 const tbl_entry_t lookup_table[] PROGMEM = {
   { string_nil, NULL, 0x00, NULL },
   { string_tee, NULL, 0x00, NULL },
-  { string_nothing, NULL, 0x00,, NULL },
+  { string_nothing, NULL, 0x00, NULL },
   { string_andoptional, NULL, 0x00, NULL },
   { string_initialelement, NULL, 0x00, NULL },
   { string_elementtype, NULL, 0x00, NULL },
