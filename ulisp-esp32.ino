@@ -2450,10 +2450,12 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     if (level == 1) {
       push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
+      push(car(processed),GCStack);
       object *result = eval(car(processed), env);
       // Serial.print("**** Result: ");
       // printobject(result, pserial);
       // Serial.println();
+      pop(GCStack);
       pop(GCStack);
       return cons(result, NULL);
     } else {
@@ -2469,6 +2471,7 @@ object *process_quasiquoted (object *expr, int level, object *env) {
     if (level == 1) {
       push(second(expr),GCStack);
       object *processed = process_quasiquoted(second(expr), level, env);
+      push(car(processed),GCStack);
       // Serial.print("**** Processed: ");
       // printobject(car(processed), pserial);
       // Serial.println();
@@ -2476,6 +2479,7 @@ object *process_quasiquoted (object *expr, int level, object *env) {
       // Serial.print("**** Result: ");
       // printobject(result, pserial);
       // Serial.println();
+      pop(GCStack);
       pop(GCStack);
       if (result == nil) return ATNOTHINGS;     // sentinel to signal that @... should insert nothing (i.e. empty list)
       else return result;
