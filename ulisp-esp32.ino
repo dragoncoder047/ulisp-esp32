@@ -7380,7 +7380,7 @@ void loop () {
     ; // noop
   }
   // Come here after error
-  delay(100); while (Serial.available()) Serial.read();
+  delay(100); Serial.flush();
   clrflag(NOESC); BreakLevel = 0;
   for (int i=0; i<TRACEMAX; i++) TraceDepth[i] = 0;
   SDpfile.close(); SDgfile.close();
