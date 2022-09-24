@@ -18,7 +18,7 @@
 /* Test MACRO with
 
 (defmacro foo (aa bb) `(defmacro ,aa () `(princ ,,bb)))
-(foo 'bar "baz")
+(foo bar "baz")
 
 */
 
@@ -3047,7 +3047,7 @@ object *fn_intern (object *args, object *env) {
   checkargs(INTERN, args);
   if (!stringp(car(args))) error(INTERN, notastring, car(args));
   char b[BUFFERSIZE];
-  char *cs = cstring(car(args), b, BUFFERSIZE);
+  char *cs = cstring(INTERN, car(args), b, BUFFERSIZE);
   return internlong(cs);
 }
 
@@ -5819,11 +5819,11 @@ const char doc_defmacro[] PROGMEM = "(defmacro (params*) body*)\n"
 "defines a macro";
 const char doc_quasiquote[] PROGMEM = "(quasiquote *args)\n"
 "Lisp quasiquotes";
-const char doc_unqoute[] PROGMEM = "(unqoute arg)\n"
+const char doc_unquote[] PROGMEM = "(unqouote arg)\n"
 "Lisp unquotes. Cannot be used outside of (quasiquote).";
 const char doc_unquotesplicing[] PROGMEM = "(unquote-splicing *args)\n"
 "Lisp unquotes. Cannot be used outside of (quasiquote).";
-const char doc_unquotesplicing[] PROGMEM = "(expand macro params body)\n"
+const char doc_expand[] PROGMEM = "(expand macro params body)\n"
 "Expand a macro.";
 
 const char doc40[] PROGMEM = "(progn form*)\n"
@@ -6252,9 +6252,9 @@ const char doc220[] PROGMEM = "(invert-display boolean)\n"
 
 const char doc_batteryvoltage[] PROGMEM = "(battery:voltage)\n"
 "Returns the current voltage of the LiPo battery powering the board.";
-const char doc_baterypercentage[] PROGMEM = "(battery:percentage)\n"
+const char doc_batterypercentage[] PROGMEM = "(battery:percentage)\n"
 "Returns the current percentage charge of the LiPo battery powering the board, from 0-100%.";
-const char doc_baterypercentage[] PROGMEM = "(battery:change-rate)\n"
+const char doc_batterychangerate[] PROGMEM = "(battery:change-rate)\n"
 "Returns the change rate of the LiPo battery powering the board, that is, how fast it is charging or discharging.";
 
 // Insert your own function documentation here
@@ -6304,6 +6304,12 @@ const tbl_entry_t lookup_table[] PROGMEM = {
   { string_unwindprotect, sp_unwindprotect, 0x1F, doc_unwindprotect },
   { string_ignoreerrors, sp_ignoreerrors, 0x11, doc_ignoreerrors },
 //   { string_error, sp_error, 0x2F, doc_error },
+  { string_MACRO_SENTINEL, NULL, 0x00, NULL },
+  { string_defmacro, sp_defmacro, 0x2F, doc_defmacro },
+  { string_quasiquote, sp_quasiquote, 0x11, doc_quasiquote },
+  { string_unquote, sp_unquote, 0x11, doc_unquote },
+  { string_unquotesplicing, sp_unquote_splicing, 0x11, doc_unquotesplicing },
+  { string_expand, sp_expand, 0x23, doc_expand },
 
   { string39, NULL, 0x00, NULL },
   { string40, tf_progn, 0x0F, doc40 },
@@ -6503,7 +6509,7 @@ const tbl_entry_t lookup_table[] PROGMEM = {
   { string229, NULL, 0x00, NULL },
 
 // Insert your own table entries here
-  { string_batteryvoltage, fn_batteryvoltage, 0x00, doc_batteryvolatage },
+  { string_batteryvoltage, fn_batteryvoltage, 0x00, doc_batteryvoltage },
   { string_batterypercentage, fn_batterypercentage, 0x00, doc_batterypercentage },
   { string_batterychangerate, fn_batterychangerate, 0x00, doc_batterychangerate },
 
@@ -6569,7 +6575,6 @@ void testescape () {
   eval - the main Lisp evaluator
 */
 object *eval (object *form, object *env) {
-  static unsigned long start = 0;
   int TC=0;
   EVAL:
   yield();  // Needed on ESP8266 to avoid Soft WDT Reset or ESP32 for multithreading
@@ -7376,7 +7381,7 @@ void repl (object *env) {
   loop - the Arduino IDE main execution loop
 */
 void loop () {
-  if (!setjmp(exception)) {
+  if (ulisp_setup_error_handling()) {
     ; // noop
   }
   // Come here after error
