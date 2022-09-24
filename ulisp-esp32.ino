@@ -7303,7 +7303,7 @@ void initenv () {
 const char SDMain[] PROGMEM = "(with-sd-card (file \"" sdmainfile "\") (loop (let ((form (read file))) (unless form (return)) (eval form))))";
 int SDMainIndex = 0;
 
-int gsdmain() {
+int gsdmain () {
   if (LastChar) {
     char temp = LastChar;
     LastChar = 0;
@@ -7313,21 +7313,21 @@ int gsdmain() {
   return (c != 0) ? c : -1; // -1?
 }
 
-void sdmain() {
+void sdmain () {
     SD.begin();
-    if (ulisp_setup_error_handling()) return;
+    if (initerror()) return;
     object *line = read(gsdmain);
     push(line, GCStack);
     (void)eval(line, NULL);
     pop(GCStack);
 }
 
-bool ulisp_setup_error_handling() {
+bool initerror () {
   if (setjmp(toplevel_errorbuffer)) return true;
   return false;
 }
 
-void ulisp_init() {
+void ulisp_init () {
   initworkspace();
   initenv();
   initsleep();
@@ -7342,9 +7342,7 @@ void setup () {
     while (1);
   }
   ulisp_init();
-  #if defined(runfromsd)
   sdmain();
-  #endif
   pfstring(PSTR("\n\nuLisp 4.3 "), pserial); pln(pserial);
 }
 
@@ -7381,7 +7379,7 @@ void repl (object *env) {
   loop - the Arduino IDE main execution loop
 */
 void loop () {
-  if (ulisp_setup_error_handling()) {
+  if (initerror()) {
     ; // noop
   }
   // Come here after error
