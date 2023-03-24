@@ -5,9 +5,9 @@
 
    Patches from original:
    * Deleted all code not for ESP32 specifically (shorter and easier to maintain)
+   * Removed load-image, save-image, ad autorunimage
    * Run-from-SD on startup
    * Different printgcs message
-   * Used actual name instead of 'stringNNN' in lookup table
    * Goheeca and Max-Gerd Retzlaff's error-handling code (https://github.com/Goheeca/redbear_duo-uLisp/commit/4894c13 and http://forum.ulisp.com/t/error-handling-in-ulisp/691/7), but replaced sp_error with fn_throw (sp_error caused a segfault)
    * Dave Astels' macro, intern, and generic :keyword support (http://forum.ulisp.com/t/ive-added-a-few-things-that-might-be-interesting/456)
 
