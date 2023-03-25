@@ -9,14 +9,11 @@ const char LispLibrary[] PROGMEM = "";
 
 // Compile options
 
-// #define resetautorun
 #define printfreespace
-// #define printgcs
-// #define sdcardsupport
+#define printgcs
+#define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
-// #define lineeditor
-// #define vt100
 // #define extensions
 
 // Includes
@@ -27,11 +24,7 @@ const char LispLibrary[] PROGMEM = "";
 #include <Wire.h>
 #include <limits.h>
 #include <EEPROM.h>
-#if defined (ESP8266)
-  #include <ESP8266WiFi.h>
-#elif defined (ESP32)
-  #include <WiFi.h>
-#endif
+#include <WiFi.h>
 
 #if defined(gfxsupport)
 #define COLOR_WHITE ST77XX_WHITE
@@ -46,111 +39,22 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #endif
 #endif
 
-#if defined(sdcardsupport)
-  #include <SD.h>
-  #define SDSIZE 172
-#else
-  #define SDSIZE 0
-#endif
+#include <SD.h>
+#define SDSIZE 172
 
 // Platform specific settings
 
 #define WORDALIGNED __attribute__((aligned (4)))
 #define BUFFERSIZE 36  // Number of bits+4
 
-#if defined(ESP8266)
-  #define WORKSPACESIZE (3928-SDSIZE)     /* Cells (8*bytes) */
-  #define EEPROMSIZE 4096                 /* Bytes available for EEPROM */
-  #define SDCARD_SS_PIN 10
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_FEATHER_ESP32)
-  #define WORKSPACESIZE (9216-SDSIZE)     /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2) || defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2_TFT)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32S2)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ADAFRUIT_QTPY_ESP32C3)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_FEATHERS2)                 /* UM FeatherS2 */
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32_DEV)                 /* For TTGO T-Display */
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-
-#elif defined(ARDUINO_ESP32S2_DEV)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32C3_DEV)
-  #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ARDUINO_ESP32S3_DEV)
-  #define WORKSPACESIZE (22000-SDSIZE)            /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#elif defined(ESP32)
-  #define WORKSPACESIZE (9216-SDSIZE)     /* Cells (8*bytes) */
-  #define LITTLEFS
-  #include "FS.h"
-  #include <LittleFS.h>
-  #define analogWrite(x,y) dacWrite((x),(y))
-  #define SDCARD_SS_PIN 13
-  #define LED_BUILTIN 13
-
-#else
-#error "Board not supported!"
+#define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
+#define LITTLEFS
+#include "FS.h"
+#include <LittleFS.h>
+#ifndef analogWrite
+#define analogWrite(x,y) dacWrite((x),(y))
 #endif
+
 
 // C Macros
 
@@ -595,6 +499,7 @@ void sweep () {
 void gc (object *form, object *env) {
   #if defined(printgcs)
   int start = Freespace;
+  static int GC_Count = 0;
   #endif
   markobject(tee);
   markobject(GlobalEnv);
@@ -603,299 +508,14 @@ void gc (object *form, object *env) {
   markobject(env);
   sweep();
   #if defined(printgcs)
-  pfl(pserial); pserial('{'); pint(Freespace - start, pserial); pserial('}');
+  GC_Count++;
+  pfl(pserial);
+  pfstring(PSTR("{GC #"), pserial);
+  pint(GC_Count, pserial);
+  pfstring(PSTR(": "), pserial);
+  pint(Freespace - start, pserial);
+  pfstring(PSTR(" freed}"), pserial);
   #endif
-}
-
-// Compact image
-
-/*
-  movepointer - corrects pointers to an object that has moved from 'from' to 'to'
-*/
-void movepointer (object *from, object *to) {
-  for (int i=0; i<WORKSPACESIZE; i++) {
-    object *obj = &Workspace[i];
-    unsigned int type = (obj->type) & ~MARKBIT;
-    if (marked(obj) && (type >= ARRAY || type==ZZERO || (type == SYMBOL && longsymbolp(obj)))) {
-      if (car(obj) == (object *)((uintptr_t)from | MARKBIT))
-        car(obj) = (object *)((uintptr_t)to | MARKBIT);
-      if (cdr(obj) == from) cdr(obj) = to;
-    }
-  }
-  // Fix strings and long symbols
-  for (int i=0; i<WORKSPACESIZE; i++) {
-    object *obj = &Workspace[i];
-    if (marked(obj)) {
-      unsigned int type = (obj->type) & ~MARKBIT;
-      if (type == STRING || (type == SYMBOL && longsymbolp(obj))) {
-        obj = cdr(obj);
-        while (obj != NULL) {
-          if (cdr(obj) == to) cdr(obj) = from;
-          obj = (object *)((uintptr_t)(car(obj)) & ~MARKBIT);
-        }
-      }
-    }
-  }
-}
-
-/*
-  compactimage - compacts the image by moving objects to the lowest possible position in the workspace
-*/
-uintptr_t compactimage (object **arg) {
-  markobject(tee);
-  markobject(GlobalEnv);
-  markobject(GCStack);
-  object *firstfree = Workspace;
-  while (marked(firstfree)) firstfree++;
-  object *obj = &Workspace[WORKSPACESIZE-1];
-  while (firstfree < obj) {
-    if (marked(obj)) {
-      car(firstfree) = car(obj);
-      cdr(firstfree) = cdr(obj);
-      unmark(obj);
-      movepointer(obj, firstfree);
-      if (GlobalEnv == obj) GlobalEnv = firstfree;
-      if (GCStack == obj) GCStack = firstfree;
-      if (*arg == obj) *arg = firstfree;
-      while (marked(firstfree)) firstfree++;
-    }
-    obj--;
-  }
-  sweep();
-  return firstfree - Workspace;
-}
-
-// Make SD card filename
-
-char *MakeFilename (object *arg, char *buffer) {
-  int max = BUFFERSIZE-1;
-  buffer[0]='/';
-  int i = 1;
-  do {
-    char c = nthchar(arg, i-1);
-    if (c == '\0') break;
-    buffer[i++] = c;
-  } while (i<max);
-  buffer[i] = '\0';
-  return buffer;
-}
-
-// Save-image and load-image
-
-#if defined(sdcardsupport)
-void SDWriteInt (File file, int data) {
-  file.write(data & 0xFF); file.write(data>>8 & 0xFF);
-  file.write(data>>16 & 0xFF); file.write(data>>24 & 0xFF);
-}
-
-int SDReadInt (File file) {
-  uintptr_t b0 = file.read(); uintptr_t b1 = file.read();
-  uintptr_t b2 = file.read(); uintptr_t b3 = file.read();
-  return b0 | b1<<8 | b2<<16 | b3<<24;
-}
-#elif defined(LITTLEFS)
-void FSWrite32 (File file, uint32_t data) {
-  union { uint32_t data2; uint8_t u8[4]; };
-  data2 = data;
-  if (file.write(u8, 4) != 4) error2(PSTR("not enough room"));
-}
-
-uint32_t FSRead32 (File file) {
-  union { uint32_t data; uint8_t u8[4]; };
-  file.read(u8, 4);
-  return data;
-}
-#else
-void EpromWriteInt(int *addr, uintptr_t data) {
-  EEPROM.write((*addr)++, data & 0xFF); EEPROM.write((*addr)++, data>>8 & 0xFF);
-  EEPROM.write((*addr)++, data>>16 & 0xFF); EEPROM.write((*addr)++, data>>24 & 0xFF);
-}
-
-int EpromReadInt (int *addr) {
-  uint8_t b0 = EEPROM.read((*addr)++); uint8_t b1 = EEPROM.read((*addr)++);
-  uint8_t b2 = EEPROM.read((*addr)++); uint8_t b3 = EEPROM.read((*addr)++);
-  return b0 | b1<<8 | b2<<16 | b3<<24;
-}
-#endif
-
-unsigned int saveimage (object *arg) {
-#if defined(sdcardsupport)
-  unsigned int imagesize = compactimage(&arg);
-  SD.begin(SDCARD_SS_PIN);
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = SD.open(MakeFilename(arg, buffer), FILE_WRITE);
-    if (!file) error2(PSTR("problem saving to SD card or invalid filename"));
-    arg = NULL;
-  } else if (arg == NULL || listp(arg)) {
-    file = SD.open("/ULISP.IMG", FILE_WRITE);
-    if (!file) error2(PSTR("problem saving to SD card"));
-  } else error(invalidarg, arg);
-  SDWriteInt(file, (uintptr_t)arg);
-  SDWriteInt(file, imagesize);
-  SDWriteInt(file, (uintptr_t)GlobalEnv);
-  SDWriteInt(file, (uintptr_t)GCStack);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    SDWriteInt(file, (uintptr_t)car(obj));
-    SDWriteInt(file, (uintptr_t)cdr(obj));
-  }
-  file.close();
-  return imagesize;
-#elif defined(LITTLEFS)
-  unsigned int imagesize = compactimage(&arg);
-  if (!LittleFS.begin(true)) error2(PSTR("problem mounting LittleFS"));
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = LittleFS.open(MakeFilename(arg, buffer), "w");
-    if (!file) error2(PSTR("problem saving to LittleFS or invalid filename"));
-    arg = NULL;
-  } else if (arg == NULL || listp(arg)) {
-    file = LittleFS.open("/ULISP.IMG", "w");
-    if (!file) error2(PSTR("problem saving to LittleFS"));
-  } else error(invalidarg, arg);
-  FSWrite32(file, (uintptr_t)arg);
-  FSWrite32(file, imagesize);
-  FSWrite32(file, (uintptr_t)GlobalEnv);
-  FSWrite32(file, (uintptr_t)GCStack);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    FSWrite32(file, (uintptr_t)car(obj));
-    FSWrite32(file, (uintptr_t)cdr(obj));
-  }
-  file.close();
-  return imagesize;
-#elif defined(EEPROMSIZE)
-  unsigned int imagesize = compactimage(&arg);
-  if (!(arg == NULL || listp(arg))) error(PSTR("illegal argument"), arg);
-  int bytesneeded = imagesize*8 + 36;
-  if (bytesneeded > EEPROMSIZE) error(PSTR("image too large"), number(imagesize));
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  EpromWriteInt(&addr, (uintptr_t)arg);
-  EpromWriteInt(&addr, imagesize);
-  EpromWriteInt(&addr, (uintptr_t)GlobalEnv);
-  EpromWriteInt(&addr, (uintptr_t)GCStack);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    EpromWriteInt(&addr, (uintptr_t)car(obj));
-    EpromWriteInt(&addr, (uintptr_t)cdr(obj));
-  }
-  EEPROM.commit();
-  return imagesize;
-#else
-  (void) arg;
-  error2(PSTR("not available"));
-  return 0;
-#endif
-}
-
-unsigned int loadimage (object *arg) {
-#if defined(sdcardsupport)
-  SD.begin(SDCARD_SS_PIN);
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = SD.open(MakeFilename(arg, buffer));
-    if (!file) error2(PSTR("problem loading from SD card or invalid filename"));
-  } else if (arg == NULL) {
-    file = SD.open("/ULISP.IMG");
-    if (!file) error2(PSTR("problem loading from SD card"));
-  } else error(invalidarg, arg);
-  SDReadInt(file);
-  unsigned int imagesize = SDReadInt(file);
-  GlobalEnv = (object *)SDReadInt(file);
-  GCStack = (object *)SDReadInt(file);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    car(obj) = (object *)SDReadInt(file);
-    cdr(obj) = (object *)SDReadInt(file);
-  }
-  file.close();
-  gc(NULL, NULL);
-  return imagesize;
-#elif defined(LITTLEFS)
-  if (!LittleFS.begin()) error2(PSTR("problem mounting LittleFS"));
-  File file;
-  if (stringp(arg)) {
-    char buffer[BUFFERSIZE];
-    file = LittleFS.open(MakeFilename(arg, buffer), "r");
-    if (!file) error2(PSTR("problem loading from LittleFS or invalid filename"));
-  }
-  else if (arg == NULL) {
-    file = LittleFS.open("/ULISP.IMG", "r");
-    if (!file) error2(PSTR("problem loading from LittleFS"));
-  }
-  else error(invalidarg, arg);
-  FSRead32(file);
-  unsigned int imagesize = FSRead32(file);
-  GlobalEnv = (object *)FSRead32(file);
-  GCStack = (object *)FSRead32(file);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    car(obj) = (object *)FSRead32(file);
-    cdr(obj) = (object *)FSRead32(file);
-  }
-  file.close();
-  gc(NULL, NULL);
-  return imagesize;
-#elif defined(EEPROMSIZE)
-  (void) arg;
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  EpromReadInt(&addr); // Skip eval address
-  unsigned int imagesize = EpromReadInt(&addr);
-  if (imagesize == 0 || imagesize == 0xFFFFFFFF) error2(PSTR("no saved image"));
-  GlobalEnv = (object *)EpromReadInt(&addr);
-  GCStack = (object *)EpromReadInt(&addr);
-  for (unsigned int i=0; i<imagesize; i++) {
-    object *obj = &Workspace[i];
-    car(obj) = (object *)EpromReadInt(&addr);
-    cdr(obj) = (object *)EpromReadInt(&addr);
-  }
-  gc(NULL, NULL);
-  return imagesize;
-#else
-  (void) arg;
-  error2(PSTR("not available"));
-  return 0;
-#endif
-}
-
-void autorunimage () {
-#if defined(sdcardsupport)
-  SD.begin(SDCARD_SS_PIN);
-  File file = SD.open("/ULISP.IMG");
-  if (!file) error2(PSTR("problem autorunning from SD card"));
-  object *autorun = (object *)SDReadInt(file);
-  file.close();
-  if (autorun != NULL) {
-    loadimage(NULL);
-    apply(autorun, NULL, NULL);
-  }
-#elif defined(LITTLEFS)
-  if (!LittleFS.begin()) error2(PSTR("problem mounting LittleFS"));
-  File file = LittleFS.open("/ULISP.IMG", "r");
-  if (!file) error2(PSTR("problem autorunning from LittleFS"));
-  object *autorun = (object *)FSRead32(file);
-  file.close();
-  if (autorun != NULL) {
-    loadimage(NULL);
-    apply(autorun, NULL, NULL);
-  }
-#elif defined(EEPROMSIZE)
-  EEPROM.begin(EEPROMSIZE);
-  int addr = 0;
-  object *autorun = (object *)EpromReadInt(&addr);
-  if (autorun != NULL && (unsigned int)autorun != 0xFFFF) {
-    loadimage(NULL);
-    apply(autorun, NULL, NULL);
-  }
-#else
-  error2(PSTR("autorun not available"));
-#endif
 }
 
 // Tracing
@@ -4689,25 +4309,6 @@ object *fn_room (object *args, object *env) {
 }
 
 /*
-  (save-image [symbol])
-  Saves the current uLisp image to non-volatile memory or SD card so it can be loaded using load-image.
-*/
-object *fn_saveimage (object *args, object *env) {
-  if (args != NULL) args = eval(first(args), env);
-  return number(saveimage(args));
-}
-
-/*
-  (load-image [filename])
-  Loads a saved uLisp image from non-volatile memory or SD card.
-*/
-object *fn_loadimage (object *args, object *env) {
-  (void) env;
-  if (args != NULL) args = first(args);
-  return number(loadimage(args));
-}
-
-/*
   (cls)
   Prints a clear-screen character.
 */
@@ -5845,8 +5446,6 @@ const char string174[] PROGMEM = "write-line";
 const char string175[] PROGMEM = "restart-i2c";
 const char string176[] PROGMEM = "gc";
 const char string177[] PROGMEM = "room";
-const char string178[] PROGMEM = "save-image";
-const char string179[] PROGMEM = "load-image";
 const char string180[] PROGMEM = "cls";
 const char string181[] PROGMEM = "digitalread";
 const char string182[] PROGMEM = "analogreadresolution";
@@ -5896,16 +5495,10 @@ const char string225[] PROGMEM = "invert-display";
 const char string226[] PROGMEM = ":led-builtin";
 const char string227[] PROGMEM = ":high";
 const char string228[] PROGMEM = ":low";
-#if defined(ESP8266)
-const char string229[] PROGMEM = ":input";
-const char string230[] PROGMEM = ":input-pullup";
-const char string231[] PROGMEM = ":output";
-#elif defined(ESP32)
 const char string229[] PROGMEM = ":input";
 const char string230[] PROGMEM = ":input-pullup";
 const char string231[] PROGMEM = ":input-pulldown";
 const char string232[] PROGMEM = ":output";
-#endif
 
 // Documentation strings
 const char doc0[] PROGMEM = "nil\n"
@@ -6310,10 +5903,6 @@ const char doc176[] PROGMEM = "(gc)\n"
 "Forces a garbage collection and prints the number of objects collected, and the time taken.";
 const char doc177[] PROGMEM = "(room)\n"
 "Returns the number of free Lisp cells remaining.";
-const char doc178[] PROGMEM = "(save-image [symbol])\n"
-"Saves the current uLisp image to non-volatile memory or SD card so it can be loaded using load-image.";
-const char doc179[] PROGMEM = "(load-image [filename])\n"
-"Loads a saved uLisp image from non-volatile memory or SD card.";
 const char doc180[] PROGMEM = "(cls)\n"
 "Prints a clear-screen character.";
 const char doc181[] PROGMEM = "(digitalread pin)\n"
@@ -6609,8 +6198,6 @@ const tbl_entry_t lookup_table[] PROGMEM = {
   { string175, fn_restarti2c, 0212, doc175 },
   { string176, fn_gc, 0200, doc176 },
   { string177, fn_room, 0200, doc177 },
-  { string178, fn_saveimage, 0201, doc178 },
-  { string179, fn_loadimage, 0201, doc179 },
   { string180, fn_cls, 0200, doc180 },
   { string181, fn_digitalread, 0211, doc181 },
   { string182, fn_analogreadresolution, 0211, doc182 },
@@ -6660,16 +6247,10 @@ const tbl_entry_t lookup_table[] PROGMEM = {
   { string226, (fn_ptr_type)LED_BUILTIN, 0, NULL },
   { string227, (fn_ptr_type)HIGH, DIGITALWRITE, NULL },
   { string228, (fn_ptr_type)LOW, DIGITALWRITE, NULL },
-#if defined(ESP8266)
-  { string229, (fn_ptr_type)INPUT, PINMODE, NULL },
-  { string230, (fn_ptr_type)INPUT_PULLUP, PINMODE, NULL },
-  { string231, (fn_ptr_type)OUTPUT, PINMODE, NULL },
-#elif defined(ESP32)
   { string229, (fn_ptr_type)INPUT, PINMODE, NULL },
   { string230, (fn_ptr_type)INPUT_PULLUP, PINMODE, NULL },
   { string231, (fn_ptr_type)INPUT_PULLDOWN, PINMODE, NULL },
   { string232, (fn_ptr_type)OUTPUT, PINMODE, NULL },
-#endif
 };
 
 #if !defined(extensions)
@@ -6783,17 +6364,8 @@ bool keywordp (object *obj) {
   eval - the main Lisp evaluator
 */
 object *eval (object *form, object *env) {
-  static unsigned long start = 0;
   int TC=0;
   EVAL:
-#if defined(ESP8266)
-  (void) start;
-  yield();  // Needed on ESP8266 to avoid Soft WDT Reset
-#elif defined(ARDUINO_ESP32C3_DEV)
-  if (millis() - start > 4000) { delay(1); start = millis(); }
-#else
-  (void) start;
-#endif
   // Enough space?
   if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
   // Escape
@@ -7248,99 +6820,6 @@ void loadfromlibrary (object *env) {
   }
 }
 
-// For line editor
-const int TerminalWidth = 80;
-volatile int WritePtr = 0, ReadPtr = 0;
-const int KybdBufSize = 333; // 42*8 - 3
-char KybdBuf[KybdBufSize];
-volatile uint8_t KybdAvailable = 0;
-
-// Parenthesis highlighting
-void esc (int p, char c) {
-  Serial.write('\e'); Serial.write('[');
-  Serial.write((char)('0'+ p/100));
-  Serial.write((char)('0'+ (p/10) % 10));
-  Serial.write((char)('0'+ p % 10));
-  Serial.write(c);
-}
-
-void hilight (char c) {
-  Serial.write('\e'); Serial.write('['); Serial.write(c); Serial.write('m');
-}
-
-/*
-  Highlight - handles parenthesis highlighting with the line editor
-*/
-void Highlight (int p, int wp, uint8_t invert) {
-  wp = wp + 2; // Prompt
-#if defined (printfreespace)
-  int f = Freespace;
-  while (f) { wp++; f=f/10; }
-#endif
-  int line = wp/TerminalWidth;
-  int col = wp%TerminalWidth;
-  int targetline = (wp - p)/TerminalWidth;
-  int targetcol = (wp - p)%TerminalWidth;
-  int up = line-targetline, left = col-targetcol;
-  if (p) {
-    if (up) esc(up, 'A');
-    if (col > targetcol) esc(left, 'D'); else esc(-left, 'C');
-    if (invert) hilight('7');
-    Serial.write('('); Serial.write('\b');
-    // Go back
-    if (up) esc(up, 'B'); // Down
-    if (col > targetcol) esc(left, 'C'); else esc(-left, 'D');
-    Serial.write('\b'); Serial.write(')');
-    if (invert) hilight('0');
-  }
-}
-
-/*
-  processkey - handles keys in the line editor
-*/
-void processkey (char c) {
-  if (c == 27) { setflag(ESCAPE); return; }    // Escape key
-#if defined(vt100)
-  static int parenthesis = 0, wp = 0;
-  // Undo previous parenthesis highlight
-  Highlight(parenthesis, wp, 0);
-  parenthesis = 0;
-#endif
-  // Edit buffer
-  if (c == '\n' || c == '\r') {
-    pserial('\n');
-    KybdAvailable = 1;
-    ReadPtr = 0;
-    return;
-  }
-  if (c == 8 || c == 0x7f) {     // Backspace key
-    if (WritePtr > 0) {
-      WritePtr--;
-      Serial.write(8); Serial.write(' '); Serial.write(8);
-      if (WritePtr) c = KybdBuf[WritePtr-1];
-    }
-  } else if (WritePtr < KybdBufSize) {
-    KybdBuf[WritePtr++] = c;
-    Serial.write(c);
-  }
-#if defined(vt100)
-  // Do new parenthesis highlight
-  if (c == ')') {
-    int search = WritePtr-1, level = 0;
-    while (search >= 0 && parenthesis == 0) {
-      c = KybdBuf[search--];
-      if (c == ')') level++;
-      if (c == '(') {
-        level--;
-        if (level == 0) {parenthesis = WritePtr-search-1; wp = WritePtr; }
-      }
-    }
-    Highlight(parenthesis, wp, 1);
-  }
-#endif
-  return;
-}
-
 /*
   gserial - gets a character from the serial port
 */
@@ -7350,17 +6829,6 @@ int gserial () {
     LastChar = 0;
     return temp;
   }
-#if defined(lineeditor)
-  while (!KybdAvailable) {
-    while (!Serial.available());
-    char temp = Serial.read();
-    processkey(temp);
-  }
-  if (ReadPtr != WritePtr) return KybdBuf[ReadPtr++];
-  KybdAvailable = 0;
-  WritePtr = 0;
-  return '\n';
-#else
   unsigned long start = millis();
   while (!Serial.available()) { delay(1); if (millis() - start > 1000) clrflag(NOECHO); }
   char temp = Serial.read();
@@ -7619,12 +7087,7 @@ void repl (object *env) {
 */
 void loop () {
   if (!setjmp(toplevel_handler)) {
-    #if defined(resetautorun)
-    volatile int autorun = 12; // Fudge to keep code size the same
-    #else
-    volatile int autorun = 13;
-    #endif
-    if (autorun == 12) autorunimage();
+    ; // noop
   }
   ulispreset();
   repl(NULL);
