@@ -6710,7 +6710,6 @@ int gserial () {
   char temp = Serial.read();
   if (temp != '\n' && !tstflag(NOECHO)) pserial(temp);
   return temp;
-#endif
 }
 
 /*
