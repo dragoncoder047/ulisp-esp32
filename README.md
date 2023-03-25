@@ -11,3 +11,4 @@ Patches:
 
 * Deleted load/save/autorunimage support
 * different garbage collect message
+* no line-editor support (you can just use `rlwrap` if you have it)
