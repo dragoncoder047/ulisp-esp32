@@ -1,6 +1,8 @@
 /*
  User Extensions
 */
+#include <Arduino.h>
+#include "ulisp.h"
 
 // Definitions
 object *fn_now (object *args, object *env) {

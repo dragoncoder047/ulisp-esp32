@@ -4,6 +4,7 @@
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
 #include "ulisp.h"
+#pragma once
 
 // Includes
 

@@ -4,9 +4,7 @@
 */
 #ifndef ULISP_H
 #define ULISP_H
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <Arduino.h>
 #include <setjmp.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -39,7 +37,8 @@ Adafruit_ST7789 tft;
 #define second(x)          (car(cdr(x)))
 #define cddr(x)            (cdr(cdr(x)))
 #define third(x)           (car(cdr(cdr(x))))
-#define push(x, y)         ((y);
+#define push(x, y)         ((y) = cons((x), (y)));
+extern const int TRACEMAX;
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };
 enum token { UNUSED, BRA, KET, QUO, DOT };
 enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM };
@@ -958,8 +957,5 @@ void initenv ();
 void initgfx ();
 void repl (object *env);
 void ulispreset ();
-#include "ulisp.c"
-#ifdef __cplusplus
-}
-#endif
+#include "ulisp.cpp"
 #endif
