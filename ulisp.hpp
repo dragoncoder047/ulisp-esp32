@@ -114,7 +114,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define fntype(x)          (((uint8_t)(x))>>6)
 #define getminargs(x)      ((((uint8_t)(x))>>3)&7)
 #define getmaxargs(x)      (((uint8_t)(x))&7)
-#define unlimitedp(x)      (((uint8_t)(x))&7==UNLIMITED)
+#define unlimitedp(x)      (getmaxargs(x)==UNLIMITED)
 #define UNLIMITED          7
 
 // let's hope the compiler can do constant folding!!
