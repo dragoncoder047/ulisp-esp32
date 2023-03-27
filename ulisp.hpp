@@ -730,13 +730,13 @@ symbol_t sym (builtin_t x) {
     return twist(x + BUILTINS);
 }
 
-const char radix40alphabet[] PROGMEM = "\0000123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-*$"
+const char radix40alphabet[] PROGMEM = "\0000123456789abcdefghijklmnopqrstuvwxyz-*$"
 
 /*
     toradix40 - returns a number from 0 to 39 if the character can be encoded, or -1 otherwise.
 */
 int8_t toradix40 (char ch) {
-    ch = toupper(ch);
+    ch = tolower(ch);
     for (int8_t i=0; i<40; i++) {
         if ((char)pgm_read_byte(&radix40alphabet[i]) == ch) return i;
     }
