@@ -2,10 +2,11 @@
  User Extensions
 */
 #include <Arduino.h>
-#include "ulisp.h"
+#define extensions
+#include "ulisp.hpp"
 
 // Definitions
-object *fn_now (object *args, object *env) {
+object* fn_now (object* args, object* env) {
   (void) env;
   static unsigned long Offset;
   unsigned long now = millis()/1000;
@@ -19,9 +20,9 @@ object *fn_now (object *args, object *env) {
   
   // Return time
   unsigned long secs = Offset + now;
-  object *seconds = number(secs%60);
-  object *minutes = number((secs/60)%60);
-  object *hours = number((secs/3600)%24);
+  object* seconds = number(secs%60);
+  object* minutes = number((secs/60)%60);
+  object* hours = number((secs/3600)%24);
   return cons(hours, cons(minutes, cons(seconds, NULL)));
 }
 

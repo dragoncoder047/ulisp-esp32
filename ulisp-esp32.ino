@@ -3,10 +3,6 @@
 
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
-
-// Lisp Library
-const char LispLibrary[] PROGMEM = "";
-
 // Compile options
 
 #define printfreespace
@@ -17,7 +13,7 @@ const char LispLibrary[] PROGMEM = "";
 // #define extensions
 
 // Includes
-#include "ulisp.h"
+#include "ulisp.hpp"
 
 /*
   setup - entry point from the Arduino IDE
