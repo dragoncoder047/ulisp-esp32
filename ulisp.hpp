@@ -1872,14 +1872,16 @@ pfun_t pstreamfun (object* args) {
 // Check pins
 
 void checkanalogread (int pin) {
-
-  if (!(pin==0 || pin==2 || pin==4 || (pin>=12 && pin<=15) || (pin>=25 && pin<=27) || (pin>=32 && pin<=36) || pin==39))
-    error(PSTR("invalid pin"), number(pin));
+   
+//   if (!(pin==0 || pin==2 || pin==4 || (pin>=12 && pin<=15) || (pin>=25 && pin<=27) || (pin>=32 && pin<=36) || pin==39))
+//     error(PSTR("invalid pin"), number(pin));
+  (void)pin;
 
 }
 
 void checkanalogwrite (int pin) {
-  if (!(pin>=25 && pin<=26)) error(PSTR("invalid pin"), number(pin));
+//   if (!(pin>=25 && pin<=26)) error(PSTR("invalid pin"), number(pin));
+  (void)pin;
 }
 
 // Note
