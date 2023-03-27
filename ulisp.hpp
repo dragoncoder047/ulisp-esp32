@@ -230,8 +230,8 @@ void psymbol (symbol_t, pfun_t);
 void printobject (object*, pfun_t);
 symbol_t sym (builtin_t);
 void indent (uint8_t, char, pfun_t);
-object* intern (symbol_t);
 object* lispstring (char*);
+uint32_t pack40 (char*);
 char* cstring (object*, char*, int);
 void pint (int, pfun_t);
 void pintbase (uint32_t, uint8_t, pfun_t);
@@ -404,8 +404,13 @@ inline void myfree (object* obj) {
 
 /*
     number - make an integer object with value n and return it
+    or return the existing one with the same value
 */
 object* number (int n) {
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (obj->type == NUMBER && obj->integer == n) return obj;
+    }
     object* ptr = myalloc();
     ptr->type = NUMBER;
     ptr->integer = n;
@@ -414,8 +419,13 @@ object* number (int n) {
 
 /*
     makefloat - make a floating point object with value f and return it
+    or return the existing one with the same value
 */
 object* makefloat (float f) {
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (obj->type == FLOAT && obj->single_float == f) return obj;
+    }
     object* ptr = myalloc();
     ptr->type = FLOAT;
     ptr->single_float = f;
@@ -424,8 +434,13 @@ object* makefloat (float f) {
 
 /*
     character - make a character object with value c and return it
+    or return the existing one with the same value
 */
 object* character (char c) {
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (obj->type == CHARACTER && obj->chars == c) return obj;
+    }
     object* ptr = myalloc();
     ptr->type = CHARACTER;
     ptr->chars = c;
@@ -444,8 +459,13 @@ object* cons (object* arg1, object* arg2) {
 
 /*
     symbol - make a symbol object with value name and return it
+    or returns the existing one with the same value
 */
 object* symbol (symbol_t name) {
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (obj->type == SYMBOL && obj->name == name) return obj;
+    }
     object* ptr = myalloc();
     ptr->type = SYMBOL;
     ptr->name = name;
@@ -456,19 +476,7 @@ object* symbol (symbol_t name) {
     bsymbol - make a built-in symbol
 */
 inline object* bsymbol (builtin_t name) {
-    return intern(twist(name+BUILTINS));
-}
-
-/*
-    intern - looks through the workspace for an existing occurrence of symbol name and returns it,
-    otherwise calls symbol(name) to create a new symbol.
-*/
-object* intern (symbol_t name) {
-    for (int i=0; i<WORKSPACESIZE; i++) {
-        object* obj = &Workspace[i];
-        if (obj->type == SYMBOL && obj->name == name) return obj;
-    }
-    return symbol(name);
+    return symbol(twist(name+BUILTINS));
 }
 
 /*
@@ -478,10 +486,23 @@ bool eqsymbols (object* obj, char* buffer) {
     object* arg = cdr(obj);
     int i = 0;
     while (!(arg == NULL && buffer[i] == 0)) {
-        if (arg == NULL || buffer[i] == 0 ||
-            arg->chars != (buffer[i]<<24 | buffer[i+1]<<16 | buffer[i+2]<<8 | buffer[i+3])) return false;
+        if (arg == NULL || buffer[i] == 0) return false;
+        int test = buffer[i]<<24;
+        i++;
+        if (buffer[i] != 0) {
+            test |= buffer[i]<<16;
+            i++;
+            if (buffer[i] != 0) {
+                test |= buffer[i]<<8;
+                i++;
+                if (buffer[i] != 0) {
+                    test |= buffer[i];
+                    i++;
+                }
+            }
+        }
+        if (arg->chars != test) return false;
         arg = car(arg);
-        i = i + 4;
     }
     return true;
 }
@@ -498,6 +519,15 @@ object* internlong (char* buffer) {
     object* obj = lispstring(buffer);
     obj->type = SYMBOL;
     return obj;
+}
+
+/*
+    buftosymbol - checks the characters in buffer and calls intern() or internlong() to make it a symbol.
+*/
+object* buftosymbol (char* b) {
+    int l = strlen(b);
+    if (i <= 6 && valid40(b)) return symbol(twist(pack40(b)));
+    else return internlong(b);
 }
 
 /*
@@ -694,21 +724,22 @@ builtin_t builtin (symbol_t name) {
 }
 
 /*
- sym - converts a builtin to a symbol name
+    sym - converts a builtin to a symbol name
 */
 symbol_t sym (builtin_t x) {
     return twist(x + BUILTINS);
 }
 
+const char radix40alphabet[] PROGMEM = "\0000123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-*$"
+
 /*
     toradix40 - returns a number from 0 to 39 if the character can be encoded, or -1 otherwise.
 */
 int8_t toradix40 (char ch) {
-    if (ch == 0) return 0;
-    if (ch >= '0' && ch <= '9') return ch-'0'+1;
-    if (ch == '-') return 37; if (ch == '*') return 38; if (ch == '$') return 39;
-    ch = ch | 0x20;
-    if (ch >= 'a' && ch <= 'z') return ch-'a'+11;
+    ch = toupper(ch);
+    for (int8_t i=0; i<40; i++) {
+        if ((char)pgm_read_byte(&radix40alphabet[i]) == ch) return i;
+    }
     return -1; // Invalid
 }
 
@@ -716,18 +747,22 @@ int8_t toradix40 (char ch) {
     fromradix40 - returns the character encoded by the number n.
 */
 char fromradix40 (char n) {
-    if (n >= 1 && n <= 9) return '0'+n-1;
-    if (n >= 11 && n <= 36) return 'a'+n-11;
-    if (n == 37) return '-'; if (n == 38) return '*'; if (n == 39) return '$';
-    return 0;
+    if (n < 0 || n >= 40) return 0;
+    return (char)pgm_read_byte(radix40alphabet + n);
 }
 
 /*
     pack40 - packs six radix40-encoded characters from buffer into a 32-bit number and returns it.
 */
 uint32_t pack40 (char* buffer) {
-    int x = 0;
-    for (int i=0; i<6; i++) x = x * 40 + toradix40(buffer[i]);
+    int x = 0, gz = 0, c = 0;
+    for (int i=0; i<6; i++) {
+        if (gz) c = 0;
+        else c = buffer[i]; // Don't dereference the buffer if we reached the end of the string already
+        x *= 40;
+        if (c == 0) gz = 1;
+        else x += toradix40(c);
+    }
     return x;
 }
 
@@ -735,8 +770,12 @@ uint32_t pack40 (char* buffer) {
     valid40 - returns true if the symbol in buffer can be encoded as six radix40-encoded characters.
 */
 bool valid40 (char* buffer) {
-    if (toradix40(buffer[0]) < 11) return false;
-    for (int i=1; i<6; i++) if (toradix40(buffer[i]) < 0) return false;
+    int t = 11;
+    for (int i=0; i<6; i++){
+        if (toradix40(buffer[i]) < t) return false;
+        if (buffer[i+1] == 0) break;
+        t = 0;
+    }
     return true;
 }
 
@@ -772,7 +811,7 @@ int checkbitvalue (object* obj) {
     checkintfloat - check that obj is an integer or floating-point number and return the number
 */
 float checkintfloat (object* obj){
-    if (integerp(obj)) return obj->integer;
+    if (integerp(obj)) return (float)obj->integer;
     if (!floatp(obj)) error(notanumber, obj);
     return obj->single_float;
 }
@@ -1906,13 +1945,17 @@ void checkanalogwrite (int pin) {
 
 // Note
 
+#ifndef tone
 void tone (int pin, int note) {
     (void) pin, (void) note;
 }
+#endif
 
+#ifndef noTone
 void noTone (int pin) {
     (void) pin;
 }
+#endif
 
 const int scale[] PROGMEM = {4186,4435,4699,4978,5274,5588,5920,6272,6645,7040,7459,7902};
 
@@ -7039,12 +7082,7 @@ object* nextitem (gfun_t gfun) {
     builtin_t x = lookupbuiltin(buffer);
     if (x == NIL) return nil;
     if (x != ENDFUNCTIONS) return bsymbol(x);
-    object* sym;
-    if ((index <= 6) && valid40(buffer)) sym = intern(twist(pack40(buffer)));
-    else {
-        buffer[index+1] = '\0'; buffer[index+2] = '\0'; buffer[index+3] = '\0'; // For internlong
-        sym = internlong(buffer);
-    }
+    object* sym = buftosymbol(buffer);
     if (buffer[0] == ':') { // Keywords quote themselves
         sym = quoteit(QUOTE, sym);
     }
