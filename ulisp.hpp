@@ -19,15 +19,15 @@ const char LispLibrary[] PROGMEM = "";
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
-// #define extensions
 
 // Includes
 
 // #include "LispLibrary.h"
 #include <setjmp.h>
+#include <limits.h>
+#include <calloc.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <limits.h>
 #include <EEPROM.h>
 #include <WiFi.h>
 
@@ -159,6 +159,11 @@ typedef const struct {
     const char* doc;
 } tbl_entry_t;
 
+typedef struct {
+    tbl_entry_t** table;
+    size_t size;
+} mtbl_entry_t;
+
 typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
@@ -175,7 +180,7 @@ object Workspace[WORKSPACESIZE] WORDALIGNED;
 
 jmp_buf toplevel_handler;
 jmp_buf *handler = &toplevel_handler;
-unsigned int Freespace = 0;
+size_t Freespace = 0;
 object* Freelist;
 unsigned int I2Ccount;
 unsigned int TraceFn[TRACEMAX];
@@ -227,7 +232,7 @@ object* findvalue (object*, object*);
 char* lookupdoc (builtin_t);
 void printsymbol (object*, pfun_t);
 void psymbol (symbol_t, pfun_t);
-unsigned int tablesize (int);
+size_t tablesize (int);
 bool findsubstring (char*, builtin_t);
 bool stringcompare (object*, bool, bool, bool);
 void pbuiltin (builtin_t, pfun_t);
@@ -6064,7 +6069,7 @@ const char doc225[] PROGMEM = "(invert-display boolean)\n"
 "Mirror-images the display.";
 
 // Built-in symbol lookup table
-const tbl_entry_t lookup_table[] PROGMEM = {
+const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string0, NULL, 0000, doc0 },
     { string1, NULL, 0000, doc1 },
     { string2, NULL, 0000, doc2 },
@@ -6298,56 +6303,89 @@ const tbl_entry_t lookup_table[] PROGMEM = {
     { string232, (fn_ptr_type)OUTPUT, PINMODE, NULL },
 };
 
-#if !defined(extensions)
-// Table cross-reference functions
+// Metatable cross-reference functions
 
-tbl_entry_t *tables[] = {lookup_table, NULL};
-const unsigned int tablesizes[] = { arraysize(lookup_table), 0 };
+mtbl_entry_t* Metatable;
+size_t NumTables;
 
 const tbl_entry_t *table (int n) {
-    return tables[n];
+    return Metatable[n].table;
 }
 
-unsigned int tablesize (int n) {
-    return tablesizes[n];
+size_t tablesize (int n) {
+    return Metatable[n].size;
 }
-#endif
+
+void inittables () {
+    Metatable = (mtbl_entry_t*)calloc(1, sizeof(mtbl_entry_t));
+    NumTables = 1;
+    Metatable[0].table = BuiltinTable;
+    Metatable[0].size = arraysize(BuiltinTable);
+}
+
+void addtable (const tbl_entry_t table) {
+    NumTables++;
+    Metatable = (mtbl_entry_t*)realloc(Metatable, NumTables * sizeof(mtbl_entry_t));
+    Metatable[NumTables-1].table = table;
+    Metatable[NumTables-1].size = arraysize(table);
+}
+
+int whichtable (builtin_t x) {
+    int t = 0;
+    while (x >= tablesize(t)) {
+        x -= tablesize(t);
+        t++;
+    }
+    return t;
+}
+
+int tableindex (builtin_t x) {
+    int t = 0;
+    while (x >= tablesize(t)) {
+        x -= tablesize(t);
+        t++;
+    }
+    return x;
+}
+
+tbl_entry_t* getentry(builtin_t name) {
+    return &table(whichtable(name))[tableindex(name)]
+}
 
 // Table lookup functions
 
 /*
-    lookupbuiltin - looks up a string in lookup_table[], and returns the index of its entry,
+    lookupbuiltin - looks up a string in BuiltinTable[], and returns the index of its entry,
     or ENDFUNCTIONS if no match is found
 */
 builtin_t lookupbuiltin (char* c) {
     unsigned int end = 0, start;
-    for (int n=0; n<2; n++) {
+    for (int n=0; n<NumTables; n++) {
         start = end;
         int entries = tablesize(n);
         end = end + entries;
         for (int i=0; i<entries; i++) {
             if (strcasecmp_P(c, (char*)pgm_read_ptr(&(table(n)[i].string))) == 0) {
-            return (builtin_t)(start + i); }
+                return (builtin_t)(start + i);
+            }
         }
     }
     return ENDFUNCTIONS;
 }
 
 /*
-    lookupfn - looks up the entry for name in lookup_table[], and returns the function entry point
+    lookupfn - looks up the entry for name in BuiltinTable[], and returns the function entry point
 */
 intptr_t lookupfn (builtin_t name) {
-    int n = name<tablesize(0);
-    return (intptr_t)pgm_read_ptr(&table(n?0:1)[n?name:name-tablesize(0)].fptr);
+    return (intptr_t)pgm_read_ptr(getentry(name)->fptr);
 }
 
 /*
-    getminmax - gets the minmax byte from lookup_table[] whose octets specify the type of function
+    getminmax - gets the minmax byte from BuiltinTable[] whose octets specify the type of function
     and minimum and maximum number of arguments for name
 */
 uint8_t getminmax (builtin_t name) {
-    int n = name<tablesize(0);
-    return pgm_read_byte(&table(n?0:1)[n?name:name-tablesize(0)].minmax);
+    return pgm_read_byte(getentry(name)->minmax);
 }
 
 /*
@@ -6364,16 +6402,14 @@ void checkminmax (builtin_t name, int nargs) {
     lookupdoc - looks up the documentation string for the built-in function name
 */
 char* lookupdoc (builtin_t name) {
-    int n = name<tablesize(0);
-    return (char*)pgm_read_ptr(&table(n?0:1)[n?name:name-tablesize(0)].doc);
+    return (char*)pgm_read_ptr(getentry(name)->doc);
 }
 
 /*
     findsubstring - tests whether a specified substring occurs in the name of a built-in function
 */
 bool findsubstring (char* part, builtin_t name) {
-    int n = name<tablesize(0);
-    PGM_P s = (char*)pgm_read_ptr(&table(n?0:1)[n?name:name-tablesize(0)].string);
+    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string);
     int l = strlen_P(s);
     int m = strlen(part);
     for (int i = 0; i <= l-m; i++) {
@@ -6397,8 +6433,7 @@ void testescape () {
 bool keywordp (object* obj) {
     if (!(symbolp(obj) && builtinp(obj->name))) return false;
     builtin_t name = builtin(obj->name);
-    int n = name<tablesize(0);
-    PGM_P s = (char*)pgm_read_ptr(&table(n?0:1)[n?name:name-tablesize(0)].string);
+    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string);
     char c = pgm_read_byte(&s[0]);
     return (c == ':');
 }
@@ -6634,8 +6669,7 @@ void printstring (object* form, pfun_t pfun) {
 */
 void pbuiltin (builtin_t name, pfun_t pfun) {
     int p = 0;
-    int n = name<tablesize(0);
-    PGM_P s = (char*)pgm_read_ptr(&table(n?0:1)[n?name:name-tablesize(0)].string); 
+    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string); 
     while (1) {
         char c = pgm_read_byte(&s[p++]);
         if (c == 0) return;

@@ -9,7 +9,9 @@ uLisp 4.3a please see the [4.3a-old](https://github.com/dragoncoder047/ulisp-esp
 
 Patches:
 
-* Deleted load/save/autorunimage support
-* different garbage collect message
-* no line-editor support (you can just use `rlwrap` if you have it)
-* Lisp `:keywords`
+* Deleted: load/save/autorunimage support
+* Modified: garbage collect message
+* Deleted: line-editor support (you can just use `rlwrap` if you have it)
+* Added: Lisp `:keywords` that auto-quote themselves
+* Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
+* 

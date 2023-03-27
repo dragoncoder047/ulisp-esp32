@@ -10,7 +10,6 @@
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
-// #define extensions
 
 // Includes
 #include "ulisp.hpp"
