@@ -141,8 +141,8 @@ enum stream {                       SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM
 // Typedefs
 
 typedef uint32_t symbol_t;
-
 typedef uint8_t minmax_t;
+typedef uint16_t builtin_t;
 
 typedef struct sobject {
     union {
@@ -180,8 +180,6 @@ typedef struct {
 typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
-typedef uint16_t builtin_t;
-
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
 CLOSURE, PSTAR, QUOTE, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
@@ -190,14 +188,13 @@ ANALOGREAD, REGISTER, FORMAT,
 // Global variables
 
 object Workspace[WORKSPACESIZE] WORDALIGNED;
+mtbl_entry_t* Metatable;
+size_t NumTables;
 
 jmp_buf toplevel_handler;
 jmp_buf *handler = &toplevel_handler;
 size_t Freespace = 0;
 object* Freelist;
-unsigned int I2Ccount;
-unsigned int TraceFn[TRACEMAX];
-unsigned int TraceDepth[TRACEMAX];
 builtin_t Context;
 
 object* GlobalEnv;
@@ -209,6 +206,10 @@ uint8_t PrintCount = 0;
 uint8_t BreakLevel = 0;
 char LastChar = 0;
 char LastPrint = 0;
+
+unsigned int I2Ccount;
+unsigned int TraceFn[TRACEMAX];
+unsigned int TraceDepth[TRACEMAX];
 
 // Flags
 enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS };
@@ -1434,8 +1435,9 @@ object* apropos (object* arg, bool print) {
         globals = cdr(globals);
     }
     // Built-in?
-    int entries = tablesize(0) + tablesize(1);
-    for (int i = 0; i < entries; i++) {
+    int entries = 0, i;
+    for (i = 0; i < NumTables; i++) entries += tablesize(i);
+    for (i = 0; i < entries; i++) {
         if (findsubstring(part, (builtin_t)i)) {
             if (print) {
                 uint8_t ft = fntype(getminmax(i));
@@ -6318,9 +6320,6 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
 
 // Metatable cross-reference functions
 
-mtbl_entry_t* Metatable;
-size_t NumTables;
-
 const tbl_entry_t *table (int n) {
     return Metatable[n].table;
 }
@@ -6343,26 +6342,13 @@ void addtable (const tbl_entry_t table) {
     Metatable[NumTables-1].size = arraysize(table);
 }
 
-int whichtable (builtin_t x) {
+tbl_entry_t* getentry(builtin_t x) {
     int t = 0;
     while (x >= tablesize(t)) {
         x -= tablesize(t);
         t++;
     }
-    return t;
-}
-
-int tableindex (builtin_t x) {
-    int t = 0;
-    while (x >= tablesize(t)) {
-        x -= tablesize(t);
-        t++;
-    }
-    return x;
-}
-
-tbl_entry_t* getentry(builtin_t name) {
-    return &table(whichtable(name))[tableindex(name)]
+    return &table(t)[x]
 }
 
 // Table lookup functions
