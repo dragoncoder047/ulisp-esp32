@@ -103,13 +103,15 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define twist(x)           ((uint32_t)((x)<<2) | (((x) & 0xC0000000)>>30))
 #define untwist(x)         (((x)>>2 & 0x3FFFFFFF) | ((x) & 0x03)<<30)
 #define arraysize(x)       (sizeof(x) / sizeof(x[0]))
+#define stringifyX(x)      #x
+#define stringify(x)       stringifyX(x)
 #define PACKEDS            0x43238000
 #define BUILTINS           0xF4240000
 #define ENDFUNCTIONS       1536
 
 // Constants
 
-const int TRACEMAX = 3; // Number of traced functions
+#define TRACEMAX 3; // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
 enum token { UNUSED, BRA, KET, QUO, DOT };
 enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM };
@@ -610,7 +612,7 @@ void trace (symbol_t name) {
     if (TraceFn[i] == 0) { TraceFn[i] = name; TraceDepth[i] = 0; return; }
     i++;
   }
-  error2(PSTR("already tracing 3 functions"));
+  error2(PSTR("already tracing " stringify(TRACEMAX) " functions"));
 }
 
 /*
@@ -655,8 +657,12 @@ bool listp (object* x) {
 */
 #define improperp(x) (!listp(x))
 
-object* quote (object* arg) {
-  return cons(bsymbol(QUOTE), cons(arg,NULL));
+/*
+  quoteit - quote a symbol with the specified type of quote
+*/
+
+object* quoteit (symbol_t q, object* it) {
+  return cons(bsymbol(q), cons(it, nil));
 }
 
 // Radix 40 encoding
@@ -2610,7 +2616,7 @@ object* tf_cond (object* args, object* env) {
     object* test = eval(first(clause), env);
     object* forms = cdr(clause);
     if (test != nil) {
-      if (forms == NULL) return quote(test); else return tf_progn(forms, env);
+      if (forms == NULL) return quoteit(QUOTE, test); else return tf_progn(forms, env);
     }
     args = cdr(args);
   }
@@ -4586,7 +4592,7 @@ object* fn_pprintall (object* args, object* env) {
     if (consp(val) && symbolp(car(val)) && builtin(car(val)->name) == LAMBDA) {
       superprint(cons(bsymbol(DEFUN), cons(var, cdr(val))), 0, pfun);
     } else {
-      superprint(cons(bsymbol(DEFVAR), cons(var, cons(quote(val), NULL))), 0, pfun);
+      superprint(cons(bsymbol(DEFVAR), cons(var, cons(quoteit(QUOTE, val), NULL))), 0, pfun);
     }
     pln(pfun);
     testescape();
@@ -5617,10 +5623,10 @@ const char doc38[] PROGMEM = "(dotimes (var number [result]) form*)\n"
 "Executes the forms number times, with the local variable var set to each integer from 0 to number-1 in turn.\n"
 "It then returns result, or nil if result is omitted.";
 const char doc39[] PROGMEM = "(trace [function]*)\n"
-"Turns on tracing of up to TRACEMAX user-defined functions,\n"
+"Turns on tracing of up to " stringify(TRACEMAX) " user-defined functions,\n"
 "and returns a list of the functions currently being traced.";
 const char doc40[] PROGMEM = "(untrace [function]*)\n"
-"Turns off tracing of up to TRACEMAX user-defined functions, and returns a list of the functions untraced.\n"
+"Turns off tracing of up to " stringify(TRACEMAX) " user-defined functions, and returns a list of the functions untraced.\n"
 "If no functions are specified it untraces all functions.";
 const char doc41[] PROGMEM = "(for-millis ([number]) form*)\n"
 "Executes the forms and then waits until a total of number milliseconds have elapsed.\n"
@@ -6998,9 +7004,16 @@ object* nextitem (gfun_t gfun) {
   builtin_t x = lookupbuiltin(buffer);
   if (x == NIL) return nil;
   if (x != ENDFUNCTIONS) return bsymbol(x);
-  else if ((index <= 6) && valid40(buffer)) return intern(twist(pack40(buffer)));
-  buffer[index+1] = '\0'; buffer[index+2] = '\0'; buffer[index+3] = '\0'; // For internlong
-  return internlong(buffer);
+  object* sym;
+  if ((index <= 6) && valid40(buffer)) sym = intern(twist(pack40(buffer)));
+  else {
+    buffer[index+1] = '\0'; buffer[index+2] = '\0'; buffer[index+3] = '\0'; // For internlong
+    sym = internlong(buffer);
+  }
+  if (buffer[0] == ':') { // Keywords quote themselves
+    sym = quoteit(QUOTE, sym);
+  }
+  return sym;
 }
 
 /*
@@ -7059,13 +7072,7 @@ void initenv () {
 void initgfx () {
   #if defined(gfxsupport)
   tft.init(135, 240);
-  #if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2_TFT)
-  pinMode(TFT_I2C_POWER, OUTPUT);
-  digitalWrite(TFT_I2C_POWER, HIGH);
-  tft.setRotation(3);
-  #else
   tft.setRotation(1);
-  #endif
   tft.fillScreen(ST77XX_BLACK);
   pinMode(TFT_BACKLITE, OUTPUT);
   digitalWrite(TFT_BACKLITE, HIGH);
