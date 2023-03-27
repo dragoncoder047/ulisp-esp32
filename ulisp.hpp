@@ -246,7 +246,6 @@ object* findvalue (object*, object*);
 char* lookupdoc (builtin_t);
 void printsymbol (object*, pfun_t);
 void psymbol (symbol_t, pfun_t);
-size_t tablesize (int);
 bool findsubstring (char*, builtin_t);
 bool stringcompare (object*, bool, bool, bool);
 void pbuiltin (builtin_t, pfun_t);
@@ -1475,7 +1474,7 @@ object* apropos (object* arg, bool print) {
     }
     // Built-in?
     int entries = 0, i;
-    for (i = 0; i < NumTables; i++) entries += tablesize(i);
+    for (i = 0; i < NumTables; i++) entries += Metatable[i].size;
     for (i = 0; i < entries; i++) {
         if (findsubstring(part, (builtin_t)i)) {
             if (print) {
@@ -6363,14 +6362,6 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
 
 // Metatable cross-reference functions
 
-const tbl_entry_t *table (int n) {
-    return Metatable[n].table;
-}
-
-size_t tablesize (int n) {
-    return Metatable[n].size;
-}
-
 void inittables () {
     Metatable = (mtbl_entry_t*)calloc(1, sizeof(mtbl_entry_t));
     NumTables = 1;
@@ -6378,7 +6369,7 @@ void inittables () {
     Metatable[0].size = arraysize(BuiltinTable);
 }
 
-void addtable (const tbl_entry_t table) {
+void addtable (const tbl_entry_t[] table) {
     NumTables++;
     Metatable = (mtbl_entry_t*)realloc(Metatable, NumTables * sizeof(mtbl_entry_t));
     Metatable[NumTables-1].table = table;
@@ -6388,11 +6379,11 @@ void addtable (const tbl_entry_t table) {
 #define getentry(x) pgm_read_ptr(__getentry(x))
 tbl_entry_t* __getentry (builtin_t x) {
     int t = 0;
-    while (x >= tablesize(t)) {
-        x -= tablesize(t);
+    while (x >= Metatable[t].size) {
+        x -= Metatable[t].size;
         t++;
     }
-    return &table(t)[x];
+    return &Matatable[t].table[x];
 }
 
 // Table lookup functions
@@ -6405,10 +6396,10 @@ builtin_t lookupbuiltin (char* c) {
     unsigned int end = 0, start;
     for (int n=0; n<NumTables; n++) {
         start = end;
-        int entries = tablesize(n);
+        int entries = Metatable[n].size;
         end = end + entries;
         for (int i=0; i<entries; i++) {
-            if (strcasecmp_P(c, (char*)pgm_read_ptr(&(table(n)[i].string))) == 0) {
+            if (strcasecmp_P(c, (char*)pgm_read_ptr(&(Metatable[n].table[i].string))) == 0) {
                 return (builtin_t)(start + i);
             }
         }
