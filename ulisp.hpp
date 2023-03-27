@@ -50,7 +50,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 // Platform specific settings
 
 #define WORDALIGNED __attribute__((aligned (4)))
-#define BUFFERSIZE 36  // Number of bits+4
+#define BUFFERSIZE 260
 
 #define WORKSPACESIZE (9216-SDSIZE)            /* Cells (8*bytes) */
 #define LITTLEFS
