@@ -7,6 +7,18 @@
 #ifndef ULISP_HPP
 #define ULISP_HPP
 
+// Includes
+
+// #include "LispLibrary.h"
+#include <Arduino.h>
+#include <setjmp.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <EEPROM.h>
+#include <WiFi.h>
+
 // Lisp Library
 #ifndef LispLibrary
 const char LispLibrary[] PROGMEM = "";
@@ -19,17 +31,6 @@ const char LispLibrary[] PROGMEM = "";
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
-
-// Includes
-
-// #include "LispLibrary.h"
-#include <setjmp.h>
-#include <limits.h>
-#include <calloc.h>
-#include <SPI.h>
-#include <Wire.h>
-#include <EEPROM.h>
-#include <WiFi.h>
 
 #if defined(gfxsupport)
 #define COLOR_WHITE ST77XX_WHITE
@@ -69,15 +70,16 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 // C Macros
 
 #define nil                NULL
-#define car(x)             (((object*) (x))->car)
-#define cdr(x)             (((object*) (x))->cdr)
+#define car(x)             (((object*)(x))->car)
+#define cdr(x)             (((object*)(x))->cdr)
 
-#define first(x)           (((object*) (x))->car)
-#define second(x)          (car(cdr(x)))
+#define first(x)           (car(x))
+#define rest(x)            (cdr(x))
+#define second(x)          (first(rest(x)))
 #define cddr(x)            (cdr(cdr(x)))
-#define third(x)           (car(cdr(cdr(x))))
+#define third(x)           (first(cddr(x)))
 
-#define push(x, y)         ((y) = cons((x),(y)))
+#define push(x, y)         ((y) = cons((x), (y)))
 #define pop(y)             ((y) = cdr(y))
 
 #define integerp(x)        ((x) != NULL && (x)->type == NUMBER)
@@ -93,8 +95,8 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define marked(x)          ((((uintptr_t)(car(x))) & MARKBIT) != 0)
 #define MARKBIT            1
 
-#define setflag(x)         (Flags = Flags | 1<<(x))
-#define clrflag(x)         (Flags = Flags & ~(1<<(x)))
+#define setflag(x)         (Flags |= 1<<(x))
+#define clrflag(x)         (Flags &= ~(1<<(x)))
 #define tstflag(x)         (Flags & 1<<(x))
 
 #define issp(x)            (x == ' ' || x == '\n' || x == '\r' || x == '\t')
