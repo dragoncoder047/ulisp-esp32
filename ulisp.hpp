@@ -6385,13 +6385,14 @@ void addtable (const tbl_entry_t table) {
     Metatable[NumTables-1].size = arraysize(table);
 }
 
-tbl_entry_t* getentry(builtin_t x) {
+#define getentry(x) pgm_read_ptr(__getentry(x))
+tbl_entry_t* __getentry (builtin_t x) {
     int t = 0;
     while (x >= tablesize(t)) {
         x -= tablesize(t);
         t++;
     }
-    return &table(t)[x]
+    return &table(t)[x];
 }
 
 // Table lookup functions
