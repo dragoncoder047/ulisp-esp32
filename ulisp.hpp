@@ -116,7 +116,6 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define TRACEMAX 3; // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
 enum token { UNUSED, BRA, KET, QUO, DOT };
-enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM };
 enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
 
 // Stream names used by printobject
@@ -128,10 +127,13 @@ const char wifistream[] PROGMEM = "wifi";
 const char stringstream[] PROGMEM = "string";
 const char gfxstream[] PROGMEM = "gfx";
 PGM_P const streamname[] PROGMEM = {serialstream, i2cstream, spistream, sdstream, wifistream, stringstream, gfxstream};
+enum stream {                       SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM};
 
 // Typedefs
 
 typedef uint32_t symbol_t;
+
+typedef uint8_t minmax_t;
 
 typedef struct sobject {
     union {
@@ -157,7 +159,7 @@ typedef void (*mapfun_t)(object* , object**);
 typedef const struct {
     PGM_P string;
     fn_ptr_type fptr;
-    uint8_t minmax;
+    minmax_t minmax;
     const char* doc;
 } tbl_entry_t;
 
@@ -207,7 +209,7 @@ volatile uint8_t Flags = 0b00001; // PRINTREADABLY set by default
 object* tee;
 bool keywordp (object*);
 void pfstring (PGM_P, pfun_t);
-uint8_t nthchar (object*, int);
+char nthchar (object*, int);
 void pfl (pfun_t);
 void pln (pfun_t);
 void pserial (char);
@@ -225,7 +227,7 @@ void pint (int, pfun_t);
 void pintbase (uint32_t, uint8_t, pfun_t);
 void printstring (object*, pfun_t);
 int subwidthlist (object*, int);
-uint8_t getminmax (builtin_t);
+minmax_t getminmax (builtin_t);
 intptr_t lookupfn (builtin_t);
 int listlength (object*);
 void checkminmax (builtin_t, int);
@@ -413,7 +415,7 @@ object* makefloat (float f) {
 /*
     character - make a character object with value c and return it
 */
-object* character (uint8_t c) {
+object* character (char c) {
     object* ptr = myalloc();
     ptr->type = CHARACTER;
     ptr->chars = c;
@@ -797,8 +799,8 @@ bool builtinp (symbol_t name) {
 int checkkeyword (object* obj) {
     if (!keywordp(obj)) error(PSTR("argument is not a keyword"), obj);
     builtin_t kname = builtin(obj->name);
-    uint8_t context = getminmax(kname);
-    if (context != 0 && context != Context) error(invalidkey, obj);
+    minmax_t context = getminmax(kname);
+    if (context != 0 && context != (minmax_t)Context) error(invalidkey, obj);
     return ((int)lookupfn(kname));
 }
 
@@ -1265,7 +1267,7 @@ object* copystring (object* arg) {
     readstring - reads characters from an input stream up to delimiter delim
     and returns a Lisp string
 */
-object* readstring (uint8_t delim, gfun_t gfun) {
+object* readstring (char delim, gfun_t gfun) {
     object* obj = newstring();
     object* tail = obj;
     int ch = gfun();
@@ -1299,7 +1301,7 @@ int stringlength (object* form) {
     nthchar - returns the nth character from a Lisp string
     Handles Lisp strings packed two characters per 16-bit word, or four characters per 32-bit word
 */
-uint8_t nthchar (object* string, int n) {
+char nthchar (object* string, int n) {
     object* arg = cdr(string);
     int top;
     if (sizeof(int) == 4) { top = n>>2; n = 3 - (n&3); }
@@ -1987,7 +1989,7 @@ void supersub (object* form, int lm, int super, pfun_t pfun) {
     int special = 0, separate = 1;
     object* arg = car(form);
     if (symbolp(arg) && builtinp(arg->name)) {
-        uint8_t minmax = getminmax(builtin(arg->name));
+        minmax_t minmax = getminmax(builtin(arg->name));
         if (minmax == 0327 || minmax == 0313) special = 2; // defun, setq, setf, defvar
         else if (minmax == 0317 || minmax == 0017 || minmax == 0117 || minmax == 0123) special = 1;
     }
@@ -6386,7 +6388,7 @@ intptr_t lookupfn (builtin_t name) {
     getminmax - gets the minmax byte from BuiltinTable[] whose octets specify the type of function
     and minimum and maximum number of arguments for name
 */
-uint8_t getminmax (builtin_t name) {
+minmax_t getminmax (builtin_t name) {
     return pgm_read_byte(getentry(name)->minmax);
 }
 
@@ -6395,7 +6397,7 @@ uint8_t getminmax (builtin_t name) {
 */
 void checkminmax (builtin_t name, int nargs) {
     if (!(name < ENDFUNCTIONS)) error2(PSTR("not a builtin"));
-    uint8_t minmax = getminmax(name);
+    minmax_t minmax = getminmax(name);
     if (nargs<((minmax >> 3) & 0x07)) error2(toofewargs);
     if ((minmax & 0x07) != 0x07 && nargs>(minmax & 0x07)) error2(toomanyargs);
 }
@@ -6613,7 +6615,7 @@ const char ControlCodes[] PROGMEM = "Null\0SOH\0STX\0ETX\0EOT\0ENQ\0ACK\0Bell\0B
     If < 127 prints ASCII; eg #\A
     Otherwise prints decimal; eg #\234
 */
-void pcharacter (uint8_t c, pfun_t pfun) {
+void pcharacter (char c, pfun_t pfun) {
     if (!tstflag(PRINTREADABLY)) pfun(c);
     else {
         pfun('#'); pfun('\\');
