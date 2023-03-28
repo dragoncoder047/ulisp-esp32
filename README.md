@@ -15,3 +15,11 @@ Patches:
 * Added: Lisp `:keywords` that auto-quote themselves
 * Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
 * 
+
+Extensions (`extensinos.hpp`):
+
+* `now` (provided by David)
+* `gensym`
+* `intern`
+* `sizeof`
+* 
