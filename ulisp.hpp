@@ -482,7 +482,7 @@ inline object* bsymbol (builtin_t name) {
 /*
     eqsymbols - compares the long string/symbol obj with the string in buffer.
 */
-bool eqsymbols (object* obj, char* buffer) {
+bool eqsymbols (object* obj, const char* buffer) {
     object* arg = cdr(obj);
     int i = 0;
     while (!(arg == NULL && buffer[i] == 0)) {
@@ -511,7 +511,7 @@ bool eqsymbols (object* obj, char* buffer) {
     internlong - looks through the workspace for an existing occurrence of the long symbol in buffer and returns it,
     otherwise calls lispstring(buffer) to create a new symbol.
 */
-object* internlong (char* buffer) {
+object* internlong (const char* buffer) {
     for (int i=0; i<WORKSPACESIZE; i++) {
         object* obj = &Workspace[i];
         if (obj->type == SYMBOL && longsymbolp(obj) && eqsymbols(obj, buffer)) return obj;
@@ -522,9 +522,9 @@ object* internlong (char* buffer) {
 }
 
 /*
-    buftosymbol - checks the characters in buffer and calls intern() or internlong() to make it a symbol.
+    buftosymbol - checks the characters in buffer and calls symbol() or internlong() to make it a symbol.
 */
-object* buftosymbol (char* b) {
+object* buftosymbol (const char* b) {
     int l = strlen(b);
     if (l <= 6 && valid40(b)) return symbol(twist(pack40(b)));
     else return internlong(b);
@@ -1387,7 +1387,7 @@ void pstr (char c) {
 /*
     lispstring - converts a C string to a Lisp string
 */
-object* lispstring (char* s) {
+object* lispstring (const char* s) {
     object* obj = newstring();
     object* tail = obj;
     while(1) {
