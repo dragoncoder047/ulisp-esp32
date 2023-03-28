@@ -64,10 +64,28 @@ const char docintern[] PROGMEM = "(intern string)\n"
 "Unlike gensym, the returned symbol is not modified from the string in any way,\n"
 "and so it may be bound.";
 
+object* fn_sizeof (object* args, object* env) {
+    int count = 0;
+    markobject(first(args));
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (marked(obj)) {
+            unmark(obj);
+            count++;
+        }
+    }
+    return number(count);
+}
+
+const char stringsizeof[] PROGMEM = "sizeof";
+const char docsizeof[] PROGMEM = "(sizeof obj)\n"
+"Returns the number of Lisp cells the object occupies in memory.";
+
 // Symbol lookup table
 const tbl_entry_t ExtensionsTable[] PROGMEM = {
     { stringnow, fn_now, MINMAX(FUNCTIONS, 0, 3), docnow },
     { stringgensym, fn_gensym, MINMAX(FUNCTIONS, 0, 1), docgensym },
     { stringintern, fn_intern, MINMAX(FUNCTIONS, 1, 1), docintern },
+    { stringsizeof, fn_sizeof, MINMAX(FUNCTIONS, 1, 1), docsizeof },
 };
 
