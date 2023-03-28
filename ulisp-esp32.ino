@@ -13,6 +13,7 @@
 
 // Includes
 #include "ulisp.hpp"
+#include "extensions.hpp"
 
 /*
     setup - entry point from the Arduino IDE
@@ -22,6 +23,7 @@ void setup () {
     int start = millis();
     while ((millis() - start) < 5000) { if (Serial) break; }
     ulispinit();
+    addtable(ExtensionsTable);
     pfstring(PSTR("uLisp 4.4 "), pserial); pln(pserial);
 }
 
