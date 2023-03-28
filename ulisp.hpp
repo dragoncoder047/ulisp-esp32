@@ -122,7 +122,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 
 // Constants
 
-#define TRACEMAX 3; // Number of traced functions
+#define TRACEMAX 3 // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
 enum token { UNUSED, BRA, KET, QUO, DOT };
 enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
@@ -173,7 +173,7 @@ typedef const struct {
 } tbl_entry_t;
 
 typedef struct {
-    tbl_entry_t** table;
+    tbl_entry_t* table;
     size_t size;
 } mtbl_entry_t;
 
@@ -232,6 +232,7 @@ symbol_t sym (builtin_t);
 void indent (uint8_t, char, pfun_t);
 object* lispstring (char*);
 uint32_t pack40 (char*);
+bool valid40 (char*);
 char* cstring (object*, char*, int);
 void pint (int, pfun_t);
 void pintbase (uint32_t, uint8_t, pfun_t);
@@ -525,7 +526,7 @@ object* internlong (char* buffer) {
 */
 object* buftosymbol (char* b) {
     int l = strlen(b);
-    if (i <= 6 && valid40(b)) return symbol(twist(pack40(b)));
+    if (l <= 6 && valid40(b)) return symbol(twist(pack40(b)));
     else return internlong(b);
 }
 
@@ -729,7 +730,7 @@ symbol_t sym (builtin_t x) {
     return twist(x + BUILTINS);
 }
 
-const char radix40alphabet[] PROGMEM = "\0000123456789abcdefghijklmnopqrstuvwxyz-*$"
+const char radix40alphabet[] PROGMEM = "\0000123456789abcdefghijklmnopqrstuvwxyz-*$";
 
 /*
     toradix40 - returns a number from 0 to 39 if the character can be encoded, or -1 otherwise.
@@ -6369,21 +6370,24 @@ void inittables () {
     Metatable[0].size = arraysize(BuiltinTable);
 }
 
-void addtable (const tbl_entry_t[] table) {
+void addtable (const tbl_entry_t table[]) {
     NumTables++;
     Metatable = (mtbl_entry_t*)realloc(Metatable, NumTables * sizeof(mtbl_entry_t));
     Metatable[NumTables-1].table = table;
     Metatable[NumTables-1].size = arraysize(table);
 }
 
-#define getentry(x) pgm_read_ptr(__getentry(x))
+#define getentry(x) ((tbl_entry_t*)pgm_read_ptr(__getentry(x)))
 tbl_entry_t* __getentry (builtin_t x) {
+    Serial.printf("__getentry(%hu)", x);
     int t = 0;
     while (x >= Metatable[t].size) {
         x -= Metatable[t].size;
         t++;
+        // THE BUG IS IN THIS FUNCTION SOMEWHERE
+        if (t > NumTables) error2(PSTR("foobar"));
     }
-    return &Matatable[t].table[x];
+    return &Metatable[t].table[x];
 }
 
 // Table lookup functions
@@ -7146,6 +7150,7 @@ void initgfx () {
 
 void ulispinit () {
     initworkspace();
+    inittables();
     initenv();
     initsleep();
     initgfx();
