@@ -1,5 +1,5 @@
 /*
- User Extensions
+    User Extensions
 */
 #include <Arduino.h>
 #include "ulisp.hpp"
@@ -35,14 +35,14 @@ object* fn_gensym (object* args, object* env) {
     char* buffer[BUFFERSIZE];
     char* prefix[BUFFERSIZE];
     if (args != NULL) {
-        prefix = cstring(first(args), prefix, BUFFERSIZE);
+        prefix = cstring(checkstring(first(args)), prefix, BUFFERSIZE);
     } else {
         prefix = "$gensym";
     }
     object* result;
     do {
         snprintf(buffer, BUFFERSIZE, "%s%i", prefix, counter);
-        result = internlong(buffer);
+        result = buftosymbol(buffer);
         counter++;
     } while (boundp(result, env) || boundp(result, GlobalEnv));
     return result;
@@ -53,9 +53,21 @@ const char docgensym[] PROGMEM = "(gensym [prefix])\n"
 "Returns a new symbol, optionally beginning with prefix (which must be a string).\n"
 "The returned symbol is guaranteed to not conflict with any existing bound symbol.";
 
+object* fn_intern (object* args, object* env) {
+    char* b[BUFFERSIZE];
+    return buftosymbol(cstring(checkstring(first(args)), b, BUFFERSIZE));
+}
+
+const char stringintern[] PROGMEM = "intern";
+const char docintern[] PROGMEM = "(intern string)\n"
+"Creates a symbol, with the same name as the string.\n"
+"Unlike gensym, the returned symbol is not modified from the string in any way,\n"
+"and so it may be bound.";
+
 // Symbol lookup table
 const tbl_entry_t ExtensionsTable[] PROGMEM = {
     { stringnow, fn_now, MINMAX(FUNCTIONS, 0, 3), docnow },
     { stringgensym, fn_gensym, MINMAX(FUNCTIONS, 0, 1), docgensym },
+    { stringintern, fn_intern, MINMAX(FUNCTIONS, 1, 1), docintern },
 };
 
