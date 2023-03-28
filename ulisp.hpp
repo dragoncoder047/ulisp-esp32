@@ -246,7 +246,6 @@ object* findpair (object*, object*);
 object* findvalue (object*, object*);
 char* lookupdoc (builtin_t);
 void printsymbol (object*, pfun_t);
-void psymbol (symbol_t, pfun_t);
 bool findsubstring (char*, builtin_t);
 bool stringcompare (object*, bool, bool, bool);
 void pbuiltin (builtin_t, pfun_t);
@@ -259,8 +258,6 @@ object* eval (object*, object*);
 void repl (object*);
 void prin1object (object*, pfun_t);
 void plispstr (symbol_t, pfun_t);
-void printstring (object*, pfun_t);
-void psymbol (symbol_t, pfun_t);
 void testescape ();
 
 
