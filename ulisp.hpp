@@ -6377,15 +6377,12 @@ void addtable (const tbl_entry_t table[]) {
     Metatable[NumTables-1].size = arraysize(table);
 }
 
-#define getentry(x) ((tbl_entry_t*)pgm_read_ptr(__getentry(x)))
-tbl_entry_t* __getentry (builtin_t x) {
-    Serial.printf("__getentry(%hu)", x);
+// #define getentry(x) ((tbl_entry_t*)pgm_read_ptr(__getentry(x)))
+tbl_entry_t* getentry (builtin_t x) {
     int t = 0;
     while (x >= Metatable[t].size) {
         x -= Metatable[t].size;
         t++;
-        // THE BUG IS IN THIS FUNCTION SOMEWHERE
-        if (t > NumTables) error2(PSTR("foobar"));
     }
     return &Metatable[t].table[x];
 }
@@ -6415,7 +6412,7 @@ builtin_t lookupbuiltin (char* c) {
     lookupfn - looks up the entry for name in BuiltinTable[], and returns the function entry point
 */
 intptr_t lookupfn (builtin_t name) {
-    return (intptr_t)pgm_read_ptr(getentry(name)->fptr);
+    return (intptr_t)pgm_read_ptr(&(getentry(name)->fptr));
 }
 
 /*
@@ -6423,7 +6420,7 @@ intptr_t lookupfn (builtin_t name) {
     and minimum and maximum number of arguments for name
 */
 minmax_t getminmax (builtin_t name) {
-    return pgm_read_byte(getentry(name)->minmax);
+    return pgm_read_byte(&(getentry(name)->minmax));
 }
 
 /*
@@ -6440,14 +6437,14 @@ void checkminmax (builtin_t name, int nargs) {
     lookupdoc - looks up the documentation string for the built-in function name
 */
 char* lookupdoc (builtin_t name) {
-    return (char*)pgm_read_ptr(getentry(name)->doc);
+    return (char*)pgm_read_ptr(&(getentry(name)->doc));
 }
 
 /*
     findsubstring - tests whether a specified substring occurs in the name of a built-in function
 */
 bool findsubstring (char* part, builtin_t name) {
-    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string);
+    PGM_P s = (char*)pgm_read_ptr(&(getentry(name)->string));
     int l = strlen_P(s);
     int m = strlen(part);
     for (int i = 0; i <= l-m; i++) {
@@ -6471,7 +6468,7 @@ void testescape () {
 bool keywordp (object* obj) {
     if (!(symbolp(obj) && builtinp(obj->name))) return false;
     builtin_t name = builtin(obj->name);
-    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string);
+    PGM_P s = (char*)pgm_read_ptr(&(getentry(name)->string));
     char c = pgm_read_byte(&s[0]);
     return (c == ':');
 }
@@ -6707,7 +6704,7 @@ void printstring (object* form, pfun_t pfun) {
 */
 void pbuiltin (builtin_t name, pfun_t pfun) {
     int p = 0;
-    PGM_P s = (char*)pgm_read_ptr(getentry(name)->string); 
+    PGM_P s = (char*)pgm_read_ptr(&(getentry(name)->string)); 
     while (1) {
         char c = pgm_read_byte(&s[p++]);
         if (c == 0) return;
