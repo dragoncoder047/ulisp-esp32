@@ -32,12 +32,12 @@ const char docnow[] PROGMEM = "(now [hh mm ss])\n"
 
 object* fn_gensym (object* args, object* env) {
     int counter = 0;
-    char* buffer[BUFFERSIZE];
-    char* prefix[BUFFERSIZE];
+    char buffer[BUFFERSIZE];
+    char prefix[BUFFERSIZE];
     if (args != NULL) {
-        prefix = cstring(checkstring(first(args)), prefix, BUFFERSIZE);
+        cstring(checkstring(first(args)), prefix, BUFFERSIZE);
     } else {
-        prefix = "$gensym";
+        strcpy(prefix, "$gensym");
     }
     object* result;
     do {
@@ -54,7 +54,7 @@ const char docgensym[] PROGMEM = "(gensym [prefix])\n"
 "The returned symbol is guaranteed to not conflict with any existing bound symbol.";
 
 object* fn_intern (object* args, object* env) {
-    char* b[BUFFERSIZE];
+    char b[BUFFERSIZE];
     return buftosymbol(cstring(checkstring(first(args)), b, BUFFERSIZE));
 }
 
@@ -88,4 +88,3 @@ const tbl_entry_t ExtensionsTable[] PROGMEM = {
     { stringintern, fn_intern, MINMAX(FUNCTIONS, 1, 1), docintern },
     { stringsizeof, fn_sizeof, MINMAX(FUNCTIONS, 1, 1), docsizeof },
 };
-

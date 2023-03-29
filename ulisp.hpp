@@ -102,8 +102,6 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define issp(x)            (x == ' ' || x == '\n' || x == '\r' || x == '\t')
 #define isbr(x)            (x == ')' || x == '(' || x == '"' || x == '#')
 #define longsymbolp(x)     (((x)->name & 0x03) == 0)
-#define twist(x)           ((uint32_t)((x)<<2) | (((x) & 0xC0000000)>>30))
-#define untwist(x)         (((x)>>2 & 0x3FFFFFFF) | ((x) & 0x03)<<30)
 #define arraysize(x)       (sizeof(x) / sizeof(x[0]))
 #define stringifyX(x)      #x
 #define stringify(x)       stringifyX(x)
@@ -230,9 +228,9 @@ void psymbol (symbol_t, pfun_t);
 void printobject (object*, pfun_t);
 symbol_t sym (builtin_t);
 void indent (uint8_t, char, pfun_t);
-object* lispstring (char*);
-uint32_t pack40 (char*);
-bool valid40 (char*);
+object* lispstring (const char*);
+uint32_t pack40 (const char*);
+bool valid40 (const char*);
 char* cstring (object*, char*, int);
 void pint (int, pfun_t);
 void pintbase (uint32_t, uint8_t, pfun_t);
@@ -260,6 +258,13 @@ void prin1object (object*, pfun_t);
 void plispstr (symbol_t, pfun_t);
 void testescape ();
 
+inline uint32_t twist (uint32_t x) {
+    return (x<<2) | ((x & 0xC0000000)>>30);
+}
+
+inline uint32_t untwist (uint32_t x) {
+    return (x>>2 & 0x3FFFFFFF) | ((x & 0x03)<<30);
+}
 
 // Error handling
 
@@ -751,7 +756,7 @@ char fromradix40 (char n) {
 /*
     pack40 - packs six radix40-encoded characters from buffer into a 32-bit number and returns it.
 */
-uint32_t pack40 (char* buffer) {
+uint32_t pack40 (const char* buffer) {
     int x = 0, gz = 0, c = 0;
     for (int i=0; i<6; i++) {
         if (gz) c = 0;
@@ -766,7 +771,7 @@ uint32_t pack40 (char* buffer) {
 /*
     valid40 - returns true if the symbol in buffer can be encoded as six radix40-encoded characters.
 */
-bool valid40 (char* buffer) {
+bool valid40 (const char* buffer) {
     int t = 11;
     for (int i=0; i<6; i++){
         if (toradix40(buffer[i]) < t) return false;
@@ -6367,14 +6372,14 @@ void inittables () {
     Metatable[0].size = arraysize(BuiltinTable);
 }
 
-void addtable (const tbl_entry_t table[]) {
+#define addtable(x) __addtable(x, arraysize(x))
+void __addtable (const tbl_entry_t table[], size_t sz) {
     NumTables++;
     Metatable = (mtbl_entry_t*)realloc(Metatable, NumTables * sizeof(mtbl_entry_t));
     Metatable[NumTables-1].table = table;
-    Metatable[NumTables-1].size = arraysize(table);
+    Metatable[NumTables-1].size = sz;
 }
 
-// #define getentry(x) ((tbl_entry_t*)pgm_read_ptr(__getentry(x)))
 tbl_entry_t* getentry (builtin_t x) {
     int t = 0;
     while (x >= Metatable[t].size) {
@@ -6495,6 +6500,7 @@ object* eval (object* form, object* env) {
         pair = value(name, GlobalEnv);
         if (pair != NULL) return cdr(pair);
         else if (builtinp(name)) return form;
+        Context = NIL;
         error(PSTR("undefined"), form);
     }
 
