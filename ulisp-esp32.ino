@@ -15,6 +15,39 @@
 #include "ulisp.hpp"
 #include "extensions.hpp"
 
+const char foo[] PROGMEM =
+"(defun load (filename)"
+  "(with-sd-card (f filename)"
+    "(loop"
+      "(let ((form (read f)))"
+        "(unless form (return))"
+        "(eval form)))))"
+"(load \"main.lisp\")"
+;
+const size_t foolen = arraylength(foo);
+     
+/*
+    sdmain - Run main.lisp on startup
+*/
+void sdmain () {
+    size_t i = 0;
+    auto fooread = [i=]() -> int {
+        if (i == foolen) return -1;
+        char c = (char)pgm_read_byte(&foo[i]);
+        i++;
+        return c;
+    };
+    if (setjmp(toplevel_handler)) return;
+    object* fooform;
+    for(;;) {
+        fooform = read(fooread);
+        if (fooform == NULL) return;
+        push(fooform, GCstack);
+        eval(fooform, NULL);
+        pop(GCstack);
+    }
+}
+
 /*
     setup - entry point from the Arduino IDE
 */
@@ -24,7 +57,8 @@ void setup () {
     while ((millis() - start) < 5000) { if (Serial) break; }
     ulispinit();
     addtable(ExtensionsTable);
-    pfstring(PSTR("uLisp 4.4 "), pserial); pln(pserial);
+    Serial.println(F("uLisp 4.4!"));
+    sdmain();
 }
 
 /*
