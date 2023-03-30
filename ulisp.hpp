@@ -122,7 +122,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 
 #define TRACEMAX 3 // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
-enum token { UNUSED, BRA, KET, QUO, DOT };
+enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD };
 enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
 
 // Stream names used by printobject
@@ -141,6 +141,7 @@ enum stream {                       SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM
 typedef uint32_t symbol_t;
 typedef uint8_t minmax_t;
 typedef uint16_t builtin_t;
+typedef uint16_t flags_t;
 
 typedef struct sobject {
     union {
@@ -179,7 +180,7 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTESPLICING, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -199,6 +200,7 @@ object* GlobalEnv;
 object* GCStack = NULL;
 object* GlobalString;
 object* GlobalStringTail;
+object* Thrown;
 int GlobalStringIndex = 0;
 uint8_t PrintCount = 0;
 uint8_t BreakLevel = 0;
@@ -210,12 +212,11 @@ unsigned int TraceFn[TRACEMAX];
 unsigned int TraceDepth[TRACEMAX];
 
 // Flags
-enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS };
-volatile uint8_t Flags = 0b00001; // PRINTREADABLY set by default
+enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS, INCATCH };
+volatile flags_t Flags = 0b00001; // PRINTREADABLY set by default
 
 // Forward references
 object* tee;
-object* Thrown;
 bool keywordp (object*);
 void pfstring (PGM_P, pfun_t);
 char nthchar (object*, int);
@@ -4353,7 +4354,7 @@ object* fn_writestring (object* args, object* env) {
     (void) env;
     object* obj = first(args);
     pfun_t pfun = pstreamfun(cdr(args));
-    char temp = Flags;
+    flags_t temp = Flags;
     clrflag(PRINTREADABLY);
     printstring(obj, pfun);
     Flags = temp;
@@ -4368,7 +4369,7 @@ object* fn_writeline (object* args, object* env) {
     (void) env;
     object* obj = first(args);
     pfun_t pfun = pstreamfun(cdr(args));
-    char temp = Flags;
+    flags_t temp = Flags;
     clrflag(PRINTREADABLY);
     printstring(obj, pfun);
     pln(pfun);
@@ -4812,7 +4813,7 @@ object* sp_help (object* args, object* env) {
     if (args == NULL) error2(noargument);
     object* docstring = documentation(first(args), env);
     if (docstring) {
-        char temp = Flags;
+        flags_t temp = Flags;
         clrflag(PRINTREADABLY);
         printstring(docstring, pserial);
         Flags = temp;
@@ -4922,7 +4923,7 @@ object* sp_ignoreerrors (object* args, object* env) {
 object* sp_error (object* args, object* env) {
     object* message = eval(cons(bsymbol(FORMAT), cons(nil, args)), env);
     if (!tstflag(MUFFLEERRORS)) {
-        char temp = Flags;
+        flags_t temp = Flags;
         clrflag(PRINTREADABLY);
         pfstring(PSTR("Error: "), pserial); printstring(message, pserial);
         Flags = temp;
@@ -5393,10 +5394,12 @@ object* fn_invertdisplay (object* args, object* env) {
 object* sp_catch (object* args, object* env) {
     object* current_GCStack = GCStack;
 
-    bool top = handler == &toplevel_handler;
     jmp_buf dynamic_handler;
     jmp_buf *previous_handler = handler;
     handler = &dynamic_handler;
+
+    flags_t temp = Flags;
+    setflag(INCATCH);
 
     object* tag = first(args);
     object* forms = rest(args);
@@ -5414,17 +5417,21 @@ object* sp_catch (object* args, object* env) {
         pop(GCStack);
         pop(GCStack);
         handler = previous_handler;
+        Flags = temp;
         return result;
     } else {
         // Something was thrown, check if it is the same tag
         GCStack = current_GCStack;
         handler = previous_handler;
+        Flags = temp;
         if (Thrown == NULL || !eq(car(Thrown), tag)) {
-            // Nothing thrown
-            if (!top) {
+            // Nothing thrown or wrong tag
+            if (tstflag(INCATCH)) {
+                // Try next-in-line catch
                 GCStack = NULL;
                 longjmp(*handler, 1);
             } else {
+                // No upper catch
                 error(PSTR("no matching tag"), tag);
             }
         } else {
@@ -5441,16 +5448,100 @@ object* sp_catch (object* args, object* env) {
 /*
     (throw 'tag [value])
     Exits the (catch) form opened with the same tag (using eq).
-    It is invalid to call (throw) with a tag that isn't
-    already registered with (catch) -- undefined behavior will result.
+    It is an error to call (throw) without first entering a (catch) with
+    the same tag.
 */
 object* fn_throw (object* args, object* env) {
+    if (!tstflag(INCATCH)) error2(PSTR("not in a catch"));
     object* tag = first(args);
     args = rest(args);
     object* value = NULL;
     if (args != NULL) value = first(args);
     Thrown = cons(tag, value);
     longjmp(*handler, 1);
+    // unreachable
+    return NULL;
+}
+
+///////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////
+// Experimental QUASIQUOTE support
+
+#define nope ((object*)-3)
+
+// From https://github.com/kanaka/mal/issues/103#issuecomment-159047401
+object* unquote (object* arg, object* env, int level) {
+    if (arg == NULL || atom(arg)) return cons(bsymbol(QUOTE), cons(arg, NULL));
+    object* what = first(arg);
+    object* result;
+    object* result2;
+    if (what->type == SYMBOL) {
+        switch (builtin(what->name)) {
+            case QUASIQUOTE:
+                push(second(arg), GCStack);
+                result = unquote(second(arg), env, level + 1);
+                pop(GCStack);
+                return cons(cons(bsymbol(QUASIQUOTE), result), NULL);
+            case UNQUOTE:
+                if (level == 1) {
+                    push(second(arg), GCStack);
+                    result = unquote(second(arg), env, level);
+                    car(GCStack) = result;
+                    result = eval(car(result), env);
+                    pop(GCStack);
+                    return cons(result, NULL);
+                } else {
+                    push(second(arg), GCStack);
+                    result = unquote(second(arg), env, level - 1);
+                    pop(GCStack);
+                    return cons(cons(bsymbol(UNQUOTE), result), NULL);
+                }
+            case UNQUOTESPLICING:
+                if (level == 1) {
+                    push(second(arg), GCStack);
+                    result = unquote(second(arg), env, level);
+                    car(GCStack) = result;
+                    result = eval(car(result), env);
+                    pop(GCStack);
+                    if (result == NULL) return nope;
+                    else return result;
+                } else {
+                    push(second(arg), GCStack);
+                    result = unquote(second(arg), env, level - 1);
+                    pop(GCStack);
+                    return cons(cons(bsymbol(UNQUOTESPLICING), result), NULL);
+                }
+            default:
+                goto notspecial;
+        }
+    } else {
+        notspecial:
+        for (object* x = arg; x != NULL, x = cdr(x)) {
+            push(car(x), GCStack);
+            object* foo = unquote(car(x), env, level);
+            pop(GCStack);
+            if (foo != nope) push(foo, result);
+        }
+        // Reverse and flatten
+        for (object* y = result; y != NULL, y = cdr(y)) {
+            if (atom(car(y))) push(car(y), result2);
+            else for (object* z = car(y), z != NULL, z = cdr(c)) push(car(z), result2);
+        }
+        return cons(result2, NULL);
+    }
+}
+
+object* sp_quasiquote (object* args, object* env) {
+    push(first(args), GCStack);
+    object* result = unquote(first(args), env, 1);
+    pop(GCStack);
+    return result;
+}
+
+object* sp_unquote_invalid (object* args, object* env) {
+    (void)args, (void)env;
+    error2(PSTR("not valid outside quasiquote"));
     // unreachable
     return NULL;
 }
@@ -5472,6 +5563,9 @@ const char string10[] PROGMEM = "let*";
 const char string11[] PROGMEM = "closure";
 const char string12[] PROGMEM = "*pc*";
 const char string13[] PROGMEM = "quote";
+const char stringquasiquote[] PROGMEM = "quasiquote";
+const char stringunquote[] PROGMEM = "unquote";
+const char stringuqsplicing[] PROGMEM = "unquote-splicing";
 const char string14[] PROGMEM = "defun";
 const char string15[] PROGMEM = "defvar";
 const char string16[] PROGMEM = "car";
@@ -6217,8 +6311,8 @@ const char doccatch[] PROGMEM = "(catch 'tag form*)\n"
 "last form.";
 const char docthrow[] PROGMEM = "(throw 'tag [value])\n"
 "Exits the (catch) form opened with the same tag (using eq).\n"
-"It is invalid to call (throw) with a tag that isn't\n"
-"already registered with (catch) -- undefined behavior will result.";
+"It is an error to call (throw) without first entering a (catch) with\n"
+"the same tag.";
 
 // Built-in symbol lookup table
 const tbl_entry_t BuiltinTable[] PROGMEM = {
@@ -6236,6 +6330,9 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string11, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), NULL },
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringquasiquote, sp_quasiquote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringunquote, sp_uq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringuqsplicing, sp_uq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { string14, sp_defun, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc14 },
     { string15, sp_defvar, MINMAX(SPECIAL_FORMS, 1, 3), doc15 },
     { string16, fn_car, MINMAX(FUNCTIONS, 1, 1), doc16 },
@@ -6996,7 +7093,7 @@ void printobject (object* form, pfun_t pfun) {
     prin1object - prints any Lisp object to the specified stream escaping special characters
 */
 void prin1object (object* form, pfun_t pfun) {
-    char temp = Flags;
+    char flags_t = Flags;
     clrflag(PRINTREADABLY);
     printobject(form, pfun);
     Flags = temp;
@@ -7060,9 +7157,9 @@ object* nextitem (gfun_t gfun) {
     }
     if (ch == '\n') ch = gfun();
     if (ch == -1) return nil;
-    if (ch == ')') return (object*)KET;
-    if (ch == '(') return (object*)BRA;
-    if (ch == '\'') return (object*)QUO;
+    if (ch == ')') return (object*)CLOSE_PAREN;
+    if (ch == '(') return (object*)OPEN_PAREN;
+    if (ch == '\'') return (object*)SINGLE_QUOTE;
 
     // Parse string
     if (ch == '"') return readstring('"', gfun);
@@ -7085,7 +7182,7 @@ object* nextitem (gfun_t gfun) {
     } else if (ch == '.') {
         buffer[index++] = ch;
         ch = gfun();
-        if (ch == ' ') return (object*)DOT;
+        if (ch == ' ') return (object*)PERIOD;
         isfloat = true;
     }
 
@@ -7187,12 +7284,12 @@ object* readrest (gfun_t gfun) {
     object* head = NULL;
     object* tail = NULL;
 
-    while (item != (object*)KET) {
-        if (item == (object*)BRA) {
+    while (item != (object*)CLOSE_PAREN) {
+        if (item == (object*)OPEN_PAREN) {
             item = readrest(gfun);
-        } else if (item == (object*)QUO) {
+        } else if (item == (object*)SINGLE_QUOTE) {
             item = cons(bsymbol(QUOTE), cons(read(gfun), NULL));
-        } else if (item == (object*)DOT) {
+        } else if (item == (object*)PERIOD) {
             tail->cdr = read(gfun);
             if (readrest(gfun) != NULL) error2(PSTR("malformed list"));
             return head;
@@ -7212,10 +7309,10 @@ object* readrest (gfun_t gfun) {
 */
 object* read (gfun_t gfun) {
     object* item = nextitem(gfun);
-    if (item == (object*)KET) error2(PSTR("incomplete list"));
-    if (item == (object*)BRA) return readrest(gfun);
-    if (item == (object*)DOT) return read(gfun);
-    if (item == (object*)QUO) return cons(bsymbol(QUOTE), cons(read(gfun), NULL));
+    if (item == (object*)CLOSE_PAREN) error2(PSTR("incomplete list"));
+    if (item == (object*)OPEN_PAREN) return readrest(gfun);
+    if (item == (object*)PERIOD) return read(gfun);
+    if (item == (object*)SINGLE_QUOTE) return cons(bsymbol(QUOTE), cons(read(gfun), NULL));
     return item;
 }
 
@@ -7270,7 +7367,7 @@ void repl (object* env) {
         Context = 0;
         object* line = read(gserial);
         if (BreakLevel && line == nil) { pln(pserial); return; }
-        if (line == (object*)KET) error2(PSTR("unmatched right bracket"));
+        if (line == (object*)CLOSE_PAREN) error2(PSTR("unmatched right bracket"));
         push(line, GCStack);
         pfl(pserial);
         line = eval(line, env);

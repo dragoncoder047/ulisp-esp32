@@ -16,16 +16,12 @@
 #include "extensions.hpp"
 
 const char foo[] PROGMEM =
-"(defun load (filename)"
-  "(with-sd-card (f filename)"
-    "(loop"
-      "(let ((form (read f)))"
-        "(unless form (return))"
-        "(eval form)))))"
+// "compressed" lisp code omits unnecessary spaces
+"(defun load(filename)(with-sd-card(f filename)(loop(let((form(read f)))(unless form(return))(eval form)))))"
 "(load \"main.lisp\")"
 ;
 const size_t foolen = arraylength(foo);
-     
+
 /*
     sdmain - Run main.lisp on startup
 */
