@@ -215,6 +215,7 @@ volatile uint8_t Flags = 0b00001; // PRINTREADABLY set by default
 
 // Forward references
 object* tee;
+object* Thrown;
 bool keywordp (object*);
 void pfstring (PGM_P, pfun_t);
 char nthchar (object*, int);
@@ -610,6 +611,7 @@ void gc (object* form, object* env) {
     static int GC_Count = 0;
     #endif
     markobject(tee);
+    markobject(Thrown);
     markobject(GlobalEnv);
     markobject(GCStack);
     markobject(form);
@@ -5377,6 +5379,84 @@ object* fn_invertdisplay (object* args, object* env) {
     return nil;
 }
 
+///////////////////////////////////////////////////////////
+// Experimental (catch) / (throw) support
+// also see Thrown global variable and garbage collector
+
+/*
+    (catch 'tag form*)
+    Evaluates the forms, and of any of them call (throw) with the same
+    tag, returns the "thrown" value. If none throw, returns the value returned by the
+    last form.
+*/
+
+object* sp_catch (object* args, object* env) {
+    object* current_GCStack = GCStack;
+
+    bool top = handler == &toplevel_handler;
+    jmp_buf dynamic_handler;
+    jmp_buf *previous_handler = handler;
+    handler = &dynamic_handler;
+
+    object* tag = first(args);
+    object* forms = rest(args);
+    push(tag, GCStack);
+    tag = eval(tag, env);
+    car(GCStack) = tag;
+    push(forms, GCStack);
+
+    object* result;
+
+    if (!setjmp(dynamic_handler)) {
+        // First: run forms
+        result = eval(tf_progn(forms, env), env);
+        // If we get here nothing was thrown
+        pop(GCStack);
+        pop(GCStack);
+        handler = previous_handler;
+        return result;
+    } else {
+        // Something was thrown, check if it is the same tag
+        GCStack = current_GCStack;
+        handler = previous_handler;
+        if (Thrown == NULL || !eq(car(Thrown), tag)) {
+            // Nothing thrown
+            if (!top) {
+                GCStack = NULL;
+                longjmp(*handler, 1);
+            } else {
+                error(PSTR("no matching tag"), tag);
+            }
+        } else {
+            // Caught!
+            pop(GCStack);
+            pop(GCStack);
+            result = cdr(Thrown);
+            Thrown = NULL;
+            return result;
+        }
+    }
+}
+
+/*
+    (throw 'tag [value])
+    Exits the (catch) form opened with the same tag (using eq).
+    It is invalid to call (throw) with a tag that isn't
+    already registered with (catch) -- undefined behavior will result.
+*/
+object* fn_throw (object* args, object* env) {
+    object* tag = first(args);
+    args = rest(args);
+    object* value = NULL;
+    if (args != NULL) value = first(args);
+    Thrown = cons(tag, value);
+    longjmp(*handler, 1);
+    // unreachable
+    return NULL;
+}
+
+///////////////////////////////////////////////////////////
+
 // Built-in symbol names
 const char string0[] PROGMEM = "nil";
 const char string1[] PROGMEM = "t";
@@ -5611,6 +5691,9 @@ const char string229[] PROGMEM = ":input";
 const char string230[] PROGMEM = ":input-pullup";
 const char string231[] PROGMEM = ":input-pulldown";
 const char string232[] PROGMEM = ":output";
+
+const char stringcatch[] PROGMEM = "catch";
+const char stringthrow[] PROGMEM = "throw";
 
 // Documentation strings
 const char doc0[] PROGMEM = "nil\n"
@@ -6128,6 +6211,15 @@ const char doc224[] PROGMEM = "(set-rotation option)\n"
 const char doc225[] PROGMEM = "(invert-display boolean)\n"
 "Mirror-images the display.";
 
+const char doccatch[] PROGMEM = "(catch 'tag form*)\n"
+"Evaluates the forms, and of any of them call (throw) with the same\n"
+"tag, returns the \"thrown\" value. If none throw, returns the value returned by the\n"
+"last form.";
+const char docthrow[] PROGMEM = "(throw 'tag [value])\n"
+"Exits the (catch) form opened with the same tag (using eq).\n"
+"It is invalid to call (throw) with a tag that isn't\n"
+"already registered with (catch) -- undefined behavior will result.";
+
 // Built-in symbol lookup table
 const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string0, NULL, MINMAX(OTHER_FORMS, 0, 0), doc0 },
@@ -6361,6 +6453,8 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string230, (fn_ptr_type)INPUT_PULLUP, PINMODE, NULL },
     { string231, (fn_ptr_type)INPUT_PULLDOWN, PINMODE, NULL },
     { string232, (fn_ptr_type)OUTPUT, PINMODE, NULL },
+    { stringcatch, sp_catch, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doccatch },
+    { stringthrow, fn_throw, MINMAX(FUNCTIONS, 1, 2), docthrow },
 };
 
 // Metatable cross-reference functions
