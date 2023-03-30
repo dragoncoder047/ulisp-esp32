@@ -5539,7 +5539,7 @@ object* sp_quasiquote (object* args, object* env) {
     return result;
 }
 
-object* sp_unquote_invalid (object* args, object* env) {
+object* qq_invalid (object* args, object* env) {
     (void)args, (void)env;
     error2(PSTR("not valid outside quasiquote"));
     // unreachable
@@ -6331,8 +6331,8 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { stringquasiquote, sp_quasiquote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringunquote, sp_uq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringuqsplicing, sp_uq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringunquote, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringuqsplicing, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { string14, sp_defun, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc14 },
     { string15, sp_defvar, MINMAX(SPECIAL_FORMS, 1, 3), doc15 },
     { string16, fn_car, MINMAX(FUNCTIONS, 1, 1), doc16 },
