@@ -21,7 +21,14 @@
 
 // Lisp Library
 #ifndef LispLibrary
-const char LispLibrary[] PROGMEM = "";
+const char LispLibrary[] PROGMEM =
+"(defun load (filename)"
+  "(with-sd-card (f filename)"
+    "(loop"
+      "(let ((form (read f)))"
+        "(unless form (return))"
+        "(eval form)))))"
+;
 #endif
 
 // Compile options
