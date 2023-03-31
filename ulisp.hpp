@@ -81,6 +81,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 
 #define push(x, y)         ((y) = cons((x), (y)))
 #define pop(y)             ((y) = cdr(y))
+#define popandfree(y)      do { object* temp__ = (y); pop(y); myfree(temp__); } while(0)
 
 #define integerp(x)        ((x) != NULL && (x)->type == NUMBER)
 #define floatp(x)          ((x) != NULL && (x)->type == FLOAT)
@@ -1788,7 +1789,7 @@ object* mapcarcan (object* args, object* env, mapfun_t fun) {
         while (lists != NULL) {
             object* list = car(lists);
             if (list == NULL) {
-                 pop(GCStack); pop(GCStack);
+                 popandfree(GCStack); popandfree(GCStack);
                  return cdr(head);
             }
             if (improperp(list)) error(notproper, list);
@@ -2349,7 +2350,7 @@ object* sp_dolist (object* args, object* env) {
             object* result = eval(car(forms), env);
             if (tstflag(RETURNFLAG)) {
                 clrflag(RETURNFLAG);
-                pop(GCStack);
+                popandfree(GCStack);
                 return result;
             }
             forms = cdr(forms);
@@ -2357,7 +2358,7 @@ object* sp_dolist (object* args, object* env) {
         list = cdr(list);
     }
     cdr(pair) = nil;
-    pop(GCStack);
+    popandfree(GCStack);
     if (params == NULL) return nil;
     return eval(car(params), env);
 }
@@ -2503,7 +2504,7 @@ object* sp_withoutputtostring (object* args, object* env) {
     push(string, GCStack);
     object* forms = cdr(args);
     eval(tf_progn(forms,env), env);
-    pop(GCStack);
+    popandfree(GCStack);
     return string;
 }
 
@@ -3217,7 +3218,7 @@ object* fn_mapc (object* args, object* env) {
         while (lists != NULL) {
             object* list = car(lists);
             if (list == NULL) {
-                 pop(GCStack); pop(GCStack);
+                 popandfree(GCStack); popandfree(GCStack);
                  return result;
             }
             if (improperp(list)) error(notproper, list);
@@ -3962,7 +3963,7 @@ object* fn_sort (object* args, object* env) {
             cdr(go) = obj;
         } else ptr = cdr(ptr);
     }
-    pop(GCStack); pop(GCStack);
+    popandfree(GCStack); popandfree(GCStack);
     return cdr(list);
 }
 
@@ -5486,7 +5487,7 @@ object* unquote (object* arg, object* env, int level) {
             case QUASIQUOTE:
                 push(second(arg), GCStack);
                 result = unquote(second(arg), env, level + 1);
-                pop(GCStack);
+                popandfree(GCStack);
                 return cons(cons(bsymbol(QUASIQUOTE), result), NULL);
             case UNQUOTE:
                 if (level == 1) {
@@ -5494,12 +5495,12 @@ object* unquote (object* arg, object* env, int level) {
                     result = unquote(second(arg), env, level);
                     car(GCStack) = result;
                     result = eval(car(result), env);
-                    pop(GCStack);
+                    popandfree(GCStack);
                     return cons(result, NULL);
                 } else {
                     push(second(arg), GCStack);
                     result = unquote(second(arg), env, level - 1);
-                    pop(GCStack);
+                    popandfree(GCStack);
                     return cons(cons(bsymbol(UNQUOTE), result), NULL);
                 }
             case UNQUOTESPLICING:
@@ -5508,13 +5509,13 @@ object* unquote (object* arg, object* env, int level) {
                     result = unquote(second(arg), env, level);
                     car(GCStack) = result;
                     result = eval(car(result), env);
-                    pop(GCStack);
+                    popandfree(GCStack);
                     if (result == NULL) return nope;
                     else return result;
                 } else {
                     push(second(arg), GCStack);
                     result = unquote(second(arg), env, level - 1);
-                    pop(GCStack);
+                    popandfree(GCStack);
                     return cons(cons(bsymbol(UNQUOTESPLICING), result), NULL);
                 }
             default:
@@ -5525,7 +5526,7 @@ object* unquote (object* arg, object* env, int level) {
         for (object* x = arg; x != NULL; x = cdr(x)) {
             push(car(x), GCStack);
             object* foo = unquote(car(x), env, level);
-            pop(GCStack);
+            popandfree(GCStack);
             if (foo != nope) push(foo, result);
         }
         // Reverse and flatten
@@ -5541,7 +5542,7 @@ object* sp_quasiquote (object* args, object* env) {
     checkargs(args);
     push(first(args), GCStack);
     object* result = unquote(first(args), env, 1);
-    pop(GCStack);
+    popandfree(GCStack);
     return result;
 }
 
@@ -6730,7 +6731,7 @@ object* eval (object* form, object* env) {
                 assigns = cdr(assigns);
             }
             env = newenv;
-            pop(GCStack);
+            popandfree(GCStack);
             form = tf_progn(forms,env);
             TC = TCstart;
             goto EVAL;
@@ -6789,7 +6790,7 @@ object* eval (object* form, object* env) {
         Context = bname;
         checkminmax(bname, nargs);
         object* result = ((fn_ptr_type)lookupfn(bname))(args, env);
-        pop(GCStack);
+        popandfree(GCStack);
         return result;
     }
 
@@ -6799,7 +6800,7 @@ object* eval (object* form, object* env) {
 
         if (isbuiltin(car(function), LAMBDA)) {
             form = closure(TCstart, name, function, args, &env);
-            pop(GCStack);
+            popandfree(GCStack);
             int trace = tracing(fname->name);
             if (trace) {
                 object* result = eval(form, env);
@@ -6818,7 +6819,7 @@ object* eval (object* form, object* env) {
         if (isbuiltin(car(function), CLOSURE)) {
             function = cdr(function);
             form = closure(TCstart, name, function, args, &env);
-            pop(GCStack);
+            popandfree(GCStack);
             TC = 1;
             goto EVAL;
         }
@@ -7130,7 +7131,7 @@ void loadfromlibrary (object* env) {
     while (line != NULL) {
         push(line, GCStack);
         eval(line, env);
-        pop(GCStack);
+        popandfree(GCStack);
         line = read(glibrary);
     }
 }
@@ -7380,7 +7381,7 @@ void repl (object* env) {
         line = eval(line, env);
         pfl(pserial);
         printobject(line, pserial);
-        pop(GCStack);
+        popandfree(GCStack);
         pfl(pserial);
         pln(pserial);
     }
