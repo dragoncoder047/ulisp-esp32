@@ -3,6 +3,12 @@
 
      Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
+
+#include <ESP32Servo.h>
+#include <analogWrite.h>
+#include <ESP32Tone.h>
+#include <ESP32PWM.h>
+
 // Compile options
 
 #define printfreespace
@@ -10,37 +16,43 @@
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
+#define toneimplemented
 
 // Includes
 #include "ulisp.hpp"
 #include "extensions.hpp"
 
 const char foo[] PROGMEM =
-// "compressed" lisp code omits unnecessary spaces
-"(defun load(filename)(with-sd-card(f filename)(loop(let((form(read f)))(unless form(return))(eval form)))))"
-"(load \"main.lisp\")"
+"(defun load (filename) (with-sd-card (f filename) (loop (let ((form (read f))) (unless form (return)) (eval form)))))\n"
+"(load \"main.lisp\")\n"
 ;
-const size_t foolen = arraylength(foo);
+const size_t foolen = arraysize(foo);
+size_t fooi = 0;
+int getfoo() {
+    if (LastChar) {
+        char temp = LastChar;
+        LastChar = 0;
+        return temp;
+    }
+    if (fooi == foolen) return -1;
+    char c = (char)pgm_read_byte(&foo[fooi]);
+    fooi++;
+    return c;
+}
 
 /*
     sdmain - Run main.lisp on startup
 */
 void sdmain () {
-    size_t i = 0;
-    auto fooread = [i=]() -> int {
-        if (i == foolen) return -1;
-        char c = (char)pgm_read_byte(&foo[i]);
-        i++;
-        return c;
-    };
+    SD.begin();
     if (setjmp(toplevel_handler)) return;
     object* fooform;
     for(;;) {
-        fooform = read(fooread);
+        fooform = read(getfoo);
         if (fooform == NULL) return;
-        push(fooform, GCstack);
+        push(fooform, GCStack);
         eval(fooform, NULL);
-        pop(GCstack);
+        pop(GCStack);
     }
 }
 
@@ -53,7 +65,7 @@ void setup () {
     while ((millis() - start) < 5000) { if (Serial) break; }
     ulispinit();
     addtable(ExtensionsTable);
-    Serial.println(F("uLisp 4.4!"));
+    Serial.println(F("\n\n\nuLisp 4.4!"));
     sdmain();
 }
 

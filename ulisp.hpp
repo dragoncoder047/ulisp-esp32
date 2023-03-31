@@ -386,7 +386,10 @@ void initworkspace () {
     myalloc - returns the first object from the linked list of free objects
 */
 object* myalloc () {
-    if (Freespace == 0) error2(PSTR("no room"));
+    if (Freespace == 0) {
+        Context = NIL;
+        error2(PSTR("out of memory"));
+    }
     object* temp = Freelist;
     Freelist = cdr(Freelist);
     Freespace--;
@@ -1950,13 +1953,11 @@ void checkanalogwrite (int pin) {
 
 // Note
 
-#ifndef tone
+#ifndef toneimplemented
 void tone (int pin, int note) {
     (void) pin, (void) note;
 }
-#endif
 
-#ifndef noTone
 void noTone (int pin) {
     (void) pin;
 }
@@ -2089,7 +2090,6 @@ object* edit (object* fun) {
 
 object* sp_quote (object* args, object* env) {
     (void) env;
-    checkargs(args);
     return first(args);
 }
 
@@ -2112,7 +2112,6 @@ object* sp_or (object* args, object* env) {
 */
 object* sp_defun (object* args, object* env) {
     (void) env;
-    checkargs(args);
     object* var = first(args);
     if (!symbolp(var)) error(notasymbol, var);
     object* val = cons(bsymbol(LAMBDA), cdr(args));
@@ -2127,7 +2126,6 @@ object* sp_defun (object* args, object* env) {
     Defines a global variable.
 */
 object* sp_defvar (object* args, object* env) {
-    checkargs(args);
     object* var = first(args);
     if (!symbolp(var)) error(notasymbol, var);
     object* val = NULL;
@@ -2194,7 +2192,6 @@ object* sp_return (object* args, object* env) {
 */
 object* sp_push (object* args, object* env) {
     int bit;
-    checkargs(args);
     object* item = eval(first(args), env);
     object** loc = place(second(args), env, &bit);
     push(item, *loc);
@@ -2207,7 +2204,6 @@ object* sp_push (object* args, object* env) {
 */
 object* sp_pop (object* args, object* env) {
     int bit;
-    checkargs(args);
     object** loc = place(first(args), env, &bit);
     object* result = car(*loc);
     pop(*loc);
@@ -2223,7 +2219,6 @@ object* sp_pop (object* args, object* env) {
 */
 object* sp_incf (object* args, object* env) {
     int bit;
-    checkargs(args);
     object** loc = place(first(args), env, &bit);
     args = cdr(args);
 
@@ -2271,7 +2266,6 @@ object* sp_incf (object* args, object* env) {
 */
 object* sp_decf (object* args, object* env) {
     int bit;
-    checkargs(args);
     object** loc = place(first(args), env, &bit);
     args = cdr(args);
 
@@ -2457,7 +2451,10 @@ object* sp_formillis (object* args, object* env) {
     object* param = first(args);
     unsigned long start = millis();
     unsigned long now, total = 0;
-    if (param != NULL) total = checkinteger(eval(first(param), env));
+    if (param != NULL) {
+        if (atom(param)) error(notalist, param);
+        total = checkinteger(eval(first(param), env));
+    }
     eval(tf_progn(cdr(args),env), env);
     do {
         now = millis() - start;
@@ -2498,6 +2495,7 @@ object* sp_withoutputtostring (object* args, object* env) {
     if (args == NULL) error2(noargument);
     object* params = first(args);
     if (params == NULL) error2(nostream);
+    if (atom(params)) error(notalist, params);
     object* var = first(params);
     object* pair = cons(var, stream(STRINGSTREAM, 0));
     push(pair,env);
@@ -2517,6 +2515,7 @@ object* sp_withoutputtostring (object* args, object* env) {
 object* sp_withserial (object* args, object* env) {
     object* params = first(args);
     if (params == NULL) error2(nostream);
+    if (atom(params)) error(notalist, params);
     object* var = first(params);
     int address = checkinteger(eval(second(params), env));
     params = cddr(params);
@@ -2540,6 +2539,7 @@ object* sp_withserial (object* args, object* env) {
 object* sp_withi2c (object* args, object* env) {
     object* params = first(args);
     if (params == NULL) error2(nostream);
+    if (atom(params)) error(notalist, params);
     object* var = first(params);
     int address = checkinteger(eval(second(params), env));
     params = cddr(params);
@@ -2569,6 +2569,7 @@ object* sp_withi2c (object* args, object* env) {
 object* sp_withspi (object* args, object* env) {
     object* params = first(args);
     if (params == NULL) error2(nostream);
+    if (atom(params)) error(notalist, params);
     object* var = first(params);
     params = cdr(params);
     if (params == NULL) error2(nostream);
@@ -2611,6 +2612,7 @@ object* sp_withsdcard (object* args, object* env) {
 #if defined(sdcardsupport)
     object* params = first(args);
     if (params == NULL) error2(nostream);
+    if (atom(params)) error(notalist, params);
     object* var = first(params);
     params = cdr(params);
     if (params == NULL) error2(PSTR("no filename specified"));
@@ -2624,11 +2626,11 @@ object* sp_withsdcard (object* args, object* env) {
     if (mode >= 1) {
         char buffer[BUFFERSIZE];
         SDpfile = SD.open(MakeFilename(filename, buffer), oflag);
-        if (!SDpfile) error2(PSTR("problem writing to SD card or invalid filename"));
+        if (!SDpfile) error(PSTR("problem writing to SD card or invalid filename"), filename);
     } else {
         char buffer[BUFFERSIZE];
         SDgfile = SD.open(MakeFilename(filename, buffer), oflag);
-        if (!SDgfile) error2(PSTR("problem reading from SD card or invalid filename"));
+        if (!SDgfile) error(PSTR("problem reading from SD card or invalid filename"), filename);
     }
     object* pair = cons(var, stream(SDSTREAM, 1));
     push(pair,env);
@@ -5399,6 +5401,7 @@ object* sp_catch (object* args, object* env) {
     handler = &dynamic_handler;
 
     flags_t temp = Flags;
+    builtin_t catchcon = Context;
     setflag(INCATCH);
 
     object* tag = first(args);
@@ -5414,8 +5417,7 @@ object* sp_catch (object* args, object* env) {
         // First: run forms
         result = eval(tf_progn(forms, env), env);
         // If we get here nothing was thrown
-        pop(GCStack);
-        pop(GCStack);
+        GCStack = current_GCStack;
         handler = previous_handler;
         Flags = temp;
         return result;
@@ -5424,20 +5426,23 @@ object* sp_catch (object* args, object* env) {
         GCStack = current_GCStack;
         handler = previous_handler;
         Flags = temp;
-        if (Thrown == NULL || !eq(car(Thrown), tag)) {
-            // Nothing thrown or wrong tag
+        if (Thrown == NULL) {
+            // Not a (throw) --> propagate the error
+            longjmp(*handler, 1);
+        }
+        else if (!eq(car(Thrown), tag)) {
+            // Wrong tag
             if (tstflag(INCATCH)) {
                 // Try next-in-line catch
                 GCStack = NULL;
                 longjmp(*handler, 1);
             } else {
                 // No upper catch
-                error(PSTR("no matching tag"), tag);
+                Context = catchcon;
+                error(PSTR("no matching tag"), car(Thrown));
             }
         } else {
             // Caught!
-            pop(GCStack);
-            pop(GCStack);
             result = cdr(Thrown);
             Thrown = NULL;
             return result;
@@ -5517,22 +5522,23 @@ object* unquote (object* arg, object* env, int level) {
         }
     } else {
         notspecial:
-        for (object* x = arg; x != NULL, x = cdr(x)) {
+        for (object* x = arg; x != NULL; x = cdr(x)) {
             push(car(x), GCStack);
             object* foo = unquote(car(x), env, level);
             pop(GCStack);
             if (foo != nope) push(foo, result);
         }
         // Reverse and flatten
-        for (object* y = result; y != NULL, y = cdr(y)) {
+        for (object* y = result; y != NULL; y = cdr(y)) {
             if (atom(car(y))) push(car(y), result2);
-            else for (object* z = car(y), z != NULL, z = cdr(c)) push(car(z), result2);
+            else for (object* z = car(y); z != NULL; z = cdr(z)) push(car(z), result2);
         }
         return cons(result2, NULL);
     }
 }
 
 object* sp_quasiquote (object* args, object* env) {
+    checkargs(args);
     push(first(args), GCStack);
     object* result = unquote(first(args), env, 1);
     pop(GCStack);
@@ -6744,6 +6750,7 @@ object* eval (object* form, object* env) {
 
         if (ft == SPECIAL_FORMS) {
             Context = name;
+            checkargs(args);
             return ((fn_ptr_type)lookupfn(name))(args, env);
         }
 
@@ -7093,7 +7100,7 @@ void printobject (object* form, pfun_t pfun) {
     prin1object - prints any Lisp object to the specified stream escaping special characters
 */
 void prin1object (object* form, pfun_t pfun) {
-    char flags_t = Flags;
+    flags_t temp = Flags;
     clrflag(PRINTREADABLY);
     printobject(form, pfun);
     Flags = temp;

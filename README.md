@@ -14,7 +14,12 @@ Patches:
 * Deleted: line-editor support (you can just use `rlwrap` if you have it)
 * Added: Lisp `:keywords` that auto-quote themselves
 * Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
-* 
+* Added: Lisp `(throw)` and `(catch)`
+* Added: ***EXPERIMENTAL, BUGGY, AND PROBABLY INCORRECT*** quasiquote/unquote/unquote-splicing (no reader support yet)
+* Added: Auto-run contents of `main.lisp` (on microSD card) at startup
+* Modified: SD-card functions now include filename in error messages
+* Fixed: various malformed-input panics (technoblogy#62)
+* Fixed: special forms don't need to call `checkargs()` because it is automatically called
 
 Extensions (`extensinos.hpp`):
 
