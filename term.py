@@ -1,11 +1,11 @@
 #! /usr/bin/env python3
 from sys import exit
-from serial import Serial
+from serial import Serial, SerialException
 from argparse import ArgumentParser
 from prompt_toolkit import PromptSession, Application
 from prompt_toolkit.layout import VSplit, HSplit, BufferControl, Window
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.widgets import TextArea, Button, VerticalLine
+from prompt_toolkit.widgets import TextArea, Label, VerticalLine
 from prompt_toolkit.layout import Layout, ScrollablePane
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -21,7 +21,11 @@ import asyncio
 
 
 WORKSPACESIZE = 9216 - 172
-HEADER_RE = re.compile(r"uLisp (\d+)", re.M)
+FREE = WORKSPACESIZE
+
+input_queue = asyncio.Queue()
+
+HEADER_RE = re.compile(r"uLisp ([\d.ab]+)", re.M)
 PROMPT_RE = re.compile(r"(\d+)> ", re.M)
 
 
@@ -42,6 +46,28 @@ class LispValidator(Validator):
             raise ValidationError(len(document.text), "Unclosed string")
 
 
+def submit_box(b: Buffer):
+    input_queue.put_nowait(b.document.text)
+    return False
+
+
+def mem_usage_indicator():
+    width = app.output.get_size().columns
+    usage_percent = 1 - FREE / WORKSPACESIZE
+    s = f"{FREE} free ({round(usage_percent * 100, 2)}%) ["
+    e = "]"
+    if usage_percent > 0.75:
+        color = "#600"
+    elif usage_percent > 0.5:
+        color = "#630"
+    else:
+        color = "#040"
+    bw = width - len(s) - len(e)
+    nb = round(bw * usage_percent)
+    bar = "#" * nb + " " * (bw - nb)
+    return HTML(f"""<style bg="{color}">{s}{bar}{e}</style>""")
+
+
 lispbuffer = TextArea(
     multiline=True,
     lexer=PygmentsLexer(CommonLispLexer),
@@ -52,59 +78,43 @@ lispbuffer = TextArea(
 terminal = TextArea(
     read_only=True,
     scrollbar=True,
+)
+cmdarea = TextArea(
+    scrollbar=False,
     wrap_lines=False,
+    lexer=PygmentsLexer(CommonLispLexer),
+    height=1,
+    focus_on_click=True,
+    validator=LispValidator(),
+    accept_handler=submit_box,
+    multiline=False,
 )
 app = Application(Layout(HSplit([
-    VSplit([
-        Button(text="Quit", handler=lambda: app.exit(),
-               left_symbol="[", right_symbol="]"),
-        Button(text="Break", handler=lambda: port.write(b"~"),
-               left_symbol="[", right_symbol="]"),
-        Button(text="Reboot", handler=None,
-               left_symbol="[", right_symbol="]")
-    ]),
     VSplit([
         lispbuffer,
         VerticalLine(),
         terminal
     ]),
+    VSplit([
+        Label(text="cmd> ", dont_extend_width=True, dont_extend_height=True),
+        cmdarea,
+    ]),
+    Label(text=mem_usage_indicator, dont_extend_height=True)
 ])), mouse_support=True, full_screen=True)
 
 
+def output(s: str):
+    if not s:
+        return
+    terminal.text += s.replace("\r\n", "\n")
+    for _ in range(s.count("\n")):
+        terminal.control.move_cursor_down()
+
+
 def parse_prompt(prompt: str) -> int:
-    return int(PROMPT_RE.search(prompt) or "0")
-
-
-def mem_usage_indicator(num_used: int, ps: PromptSession):
-    width = ps.output.get_size().columns
-    usage_percent = num_used / WORKSPACESIZE
-    s = f"{num_used}/{WORKSPACESIZE} ({usage_percent * 100})% ["
-    e = "]"
-    if usage_percent > 0.75:
-        color = "ansired"
-    elif usage_percent > 0.5:
-        color = "ansiyellow"
-    else:
-        color = "ansiblue"
-    bw = width - len(s) - len(e)
-    nb = round(bw * usage_percent)
-    bar = "#" * nb + " " * (bw - nb)
-    return HTML(f"""<style bg="{color}">{s}{bar}{e}</style>""")
-
-
-def get_lisp_input(prompt: str, ps: PromptSession) -> str:
-    num_used = parse_prompt(prompt)
-    try:
-        string = ps.prompt(
-            "uLisp> ",
-            multiline=True,
-            lexer=PygmentsLexer(CommonLispLexer),
-            auto_suggest=AutoSuggestFromHistory(),
-            bottom_toolbar=lambda: mem_usage_indicator(num_used, ps))
-    except EOFError:
-        print("^D")
-        exit(0)
-    return string
+    if m := PROMPT_RE.search(prompt):
+        return int(m.group(1))
+    return 0
 
 
 def passthrough_until_prompt(port: Serial) -> str:
@@ -115,7 +125,7 @@ def passthrough_until_prompt(port: Serial) -> str:
             out += line
         if PROMPT_RE.search(out) is not None:
             return out
-        print(line, end="", flush=True)
+        output(line)
 
 
 def startup(port: Serial) -> str:
@@ -124,7 +134,7 @@ def startup(port: Serial) -> str:
     port.dtr = False
     port.dtr = True
     header = passthrough_until_prompt(port)
-    if m := HEADER_RE.match(header):
+    if m := HEADER_RE.search(header):
         ver = " " + m.group(1)
     else:
         ver = ""
@@ -132,11 +142,13 @@ def startup(port: Serial) -> str:
     return header.rsplit("\n", 1)[-1]
 
 
-async def repl(port: Serial, ps: PromptSession):
+async def repl(port: Serial):
+    global FREE
     with patch_stdout():
         prompt = startup(port)
         while True:
-            send = get_lisp_input(prompt, ps)
+            FREE = parse_prompt(prompt)
+            send = await input_queue.get()
             port.write(send.encode())
             port.write(b"\n")
             port.flush()
@@ -148,11 +160,17 @@ async def main():
     a.add_argument("-p", "--port", default="/dev/ttyUSB0")
     a.add_argument("-b", "--baud", default=115200)
     x = a.parse_args()
-    port = Serial(x.port, x.baud, timeout=0.1, exclusive=True)
+    try:
+        port = Serial(x.port, x.baud, timeout=0.1, exclusive=True)
+    except SerialException:
+        exit(f"error: could not open {x.port}\n"
+             "- device plugged in?\n"
+             "- wrong port? (specify with -p PORT)\n")
 
     tasks = []
     tasks.append(app.run_async())
-    await asyncio.gather(*tasks)
+    tasks.append(repl(port))
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == '__main__':
