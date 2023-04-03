@@ -75,5 +75,5 @@ UI Overview:
     * `.quit`: Closes the serial port, and exits from the application.
 * Status Bar: Shows whether the program is running, waiting for input at the REPL, crashed because of an error, etc.
 * Right Status: Doesn't do anything on its own, but if your program prints out something of the form `$!rs=foo!$`, it will hide that string in the Serial Monitor, and put `foo` in the Right Status area. This is useful if you want to monitor the state of a pin in a loop, and you don't want to overload the Serial Monitor with a barrage of text.
-* Memory Usage: Shows the percentage of memory used by your program in a couple of different ways and also changes color depending on how much memory is used.
+* Memory Usage: Shows the percentage of memory used by your program in a couple of different ways and also changes color depending on how much memory is used. This is updated after every garbage collection.
 * Last GC Info: Shows how many garbage collections have been done since the start of the program, and how much was freed on the most recent GC.

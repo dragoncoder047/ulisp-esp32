@@ -116,6 +116,12 @@ def error_watcher(m: re.Match):
     return True
 
 
+@Watcher(r"\a")
+def bell_watcher(m: re.Match):
+    app.output.bell()
+    return True
+
+
 def memory_usage_bar():
     width = app.output.get_size().columns
     usage_percent = 1 - FREE / WORKSPACESIZE
@@ -154,10 +160,12 @@ lispbuffer = TextArea(
     validator=LispValidator(),
     history=InMemoryHistory(),
     auto_suggest=AutoSuggestFromHistory())
+lispbuffer.allow_scroll_beyond_bottom = True
 
 terminal = TextArea(
     read_only=True,
     scrollbar=True)
+terminal.allow_scroll_beyond_bottom = True
 
 command_bar = TextArea(
     scrollbar=False,
