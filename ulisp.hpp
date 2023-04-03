@@ -123,7 +123,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 
 #define TRACEMAX 3 // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
-enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD };
+enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD, BACKQUOTE, COMMA, COMMA_AT };
 enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
 
 // Stream names used by printobject
@@ -1303,11 +1303,11 @@ void buildstring (char ch, object** tail) {
     if (cdr(*tail) == NULL) {
         cell = myalloc(); cdr(*tail) = cell;
     } else if (((*tail)->chars & 0xFFFFFF) == 0) {
-        (*tail)->chars = (*tail)->chars | ch<<16; return;
+        (*tail)->chars |= ch<<16; return;
     } else if (((*tail)->chars & 0xFFFF) == 0) {
-        (*tail)->chars = (*tail)->chars | ch<<8; return;
+        (*tail)->chars |= ch<<8; return;
     } else if (((*tail)->chars & 0xFF) == 0) {
-        (*tail)->chars = (*tail)->chars | ch; return;
+        (*tail)->chars |= ch; return;
     } else {
         cell = myalloc(); car(*tail) = cell;
     }
@@ -6680,6 +6680,7 @@ object* eval (object* form, object* env) {
     if (form->type >= NUMBER && form->type <= STRING) return form;
 
     if (symbolp(form)) {
+        if (nthchar(princtostring(form), 0) == ':') return form; // Keyword
         symbol_t name = form->name;
         object* pair = value(name, env);
         if (pair != NULL) return cdr(pair);
@@ -7156,6 +7157,16 @@ object* nextitem (gfun_t gfun) {
     if (ch == ')') return (object*)CLOSE_PAREN;
     if (ch == '(') return (object*)OPEN_PAREN;
     if (ch == '\'') return (object*)SINGLE_QUOTE;
+    if (ch == '`') return (object*)BACKQUOTE;
+    if (ch == '@') return (object*)COMMA_AT; // maintain compatibility with old Dave Astels code
+    if (ch == ',') {
+        ch = gfun();
+        if (ch == '@') return (object *)COMMA_AT;
+        else {
+            LastChar = ch;
+            return (object *)COMMA;
+        }
+    }
 
     // Parse string
     if (ch == '"') return readstring('"', gfun);
@@ -7265,11 +7276,7 @@ object* nextitem (gfun_t gfun) {
     builtin_t x = lookupbuiltin(buffer);
     if (x == NIL) return nil;
     if (x != ENDFUNCTIONS) return bsymbol(x);
-    object* sym = buftosymbol(buffer);
-    if (buffer[0] == ':') { // Keywords quote themselves
-        sym = quoteit(QUOTE, sym);
-    }
-    return sym;
+    return buftosymbol(buffer);
 }
 
 /*
@@ -7281,13 +7288,14 @@ object* readrest (gfun_t gfun) {
     object* tail = NULL;
 
     while (item != (object*)CLOSE_PAREN) {
-        if (item == (object*)OPEN_PAREN) {
-            item = readrest(gfun);
-        } else if (item == (object*)SINGLE_QUOTE) {
-            item = cons(bsymbol(QUOTE), cons(read(gfun), NULL));
-        } else if (item == (object*)PERIOD) {
+        if (item == (object*)OPEN_PAREN) item = readrest(gfun);
+        else if (item == (object*)SINGLE_QUOTE) item = quoteit(QUOTE, read(gfun));
+        else if (item == (object*)BACKQUOTE) item = quoteit(QUASIQUOTE, read(gfun));
+        else if (item == (object*)COMMA) item = quoteit(UNQUOTE, read(gfun));
+        else if (item == (object*)COMMA_AT) item = quoteit(UNQUOTE_SPLICING, read(gfun));
+        else if (item == (object*)PERIOD) {
             tail->cdr = read(gfun);
-            if (readrest(gfun) != NULL) error2(PSTR("malformed list"));
+            if (readrest(gfun) != NULL) error2(PSTR("only one form allowed after reader dot"));
             return head;
         } else {
             object* cell = cons(item, NULL);
@@ -7305,10 +7313,13 @@ object* readrest (gfun_t gfun) {
 */
 object* read (gfun_t gfun) {
     object* item = nextitem(gfun);
-    if (item == (object*)CLOSE_PAREN) error2(PSTR("incomplete list"));
+    if (item == (object*)CLOSE_PAREN) error2(PSTR("unexpected close paren"));
     if (item == (object*)OPEN_PAREN) return readrest(gfun);
     if (item == (object*)PERIOD) return read(gfun);
-    if (item == (object*)SINGLE_QUOTE) return cons(bsymbol(QUOTE), cons(read(gfun), NULL));
+    if (item == (object*)SINGLE_QUOTE) return quoteit(QUOTE, read(gfun));
+    if (item == (object*)BACKQUOTE) return quoteit(QUASIQUOTE, read(gfun));
+    if (item == (object*)COMMA) return quoteit(UNQUOTE, read(gfun));
+    if (item == (object*)COMMA_AT) return quoteit(UNQUOTE_SPLICING, read(gfun));
     return item;
 }
 
