@@ -1,7 +1,7 @@
-/* uLisp ESP Release 4.4 - www.ulisp.com
-     David Johnson-Davies - www.technoblogy.com - 21st March 2023
+/* uLisp ESP Release 4.4b - www.ulisp.com
+   David Johnson-Davies - www.technoblogy.com - 31st March 2023
 
-     Licensed under the MIT license: https://opensource.org/licenses/MIT
+   Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
 
 #ifndef ULISP_HPP
@@ -495,19 +495,11 @@ bool eqsymbols (object* obj, const char* buffer) {
     int i = 0;
     while (!(arg == NULL && buffer[i] == 0)) {
         if (arg == NULL || buffer[i] == 0) return false;
-        int test = buffer[i]<<24;
-        i++;
-        if (buffer[i] != 0) {
-            test |= buffer[i]<<16;
-            i++;
-            if (buffer[i] != 0) {
-                test |= buffer[i]<<8;
-                i++;
-                if (buffer[i] != 0) {
-                    test |= buffer[i];
-                    i++;
-                }
-            }
+        int test = 0, shift = 24;
+        for (int j=0; j<4; j++, i++) {
+            if (buffer[i] == 0) break;
+            test |= buffer[i]<<shift;
+            shift -= 8;
         }
         if (arg->chars != test) return false;
         arg = car(arg);
@@ -517,7 +509,7 @@ bool eqsymbols (object* obj, const char* buffer) {
 
 /*
     internlong - looks through the workspace for an existing occurrence of the long symbol in buffer and returns it,
-    otherwise calls lispstring(buffer) to create a new symbol.
+    otherwise calls lispstring(buffer) and coerces it to symbol.
 */
 object* internlong (const char* buffer) {
     for (int i=0; i<WORKSPACESIZE; i++) {
@@ -602,7 +594,7 @@ void sweep () {
     Freespace = 0;
     for (int i=WORKSPACESIZE-1; i>=0; i--) {
         object* obj = &Workspace[i];
-        if (!marked(obj)) myfree(obj); else unmark(obj);
+        if (marked(obj)) unmark(obj); else myfree(obj);
     }
 }
 
@@ -625,15 +617,19 @@ void gc (object* form, object* env) {
     #if defined(printgcs)
     GC_Count++;
     pfl(pserial);
-    pfstring(PSTR("{GC #"), pserial);
+    pfstring(PSTR("{GC#"), pserial);
     pint(GC_Count, pserial);
-    pfstring(PSTR(": "), pserial);
+    pserial(':');
     pint(Freespace - start, pserial);
-    pfstring(PSTR(" freed}"), pserial);
+    pserial(',');
+    pint(Freespace, pserial);
+    pserial('/');
+    pint(WORKSPACESIZE, pserial);
+    pserial('}');
     #endif
 }
 
-char *MakeFilename (object *arg, char *buffer) {
+char *MakeFilename (object* arg, char *buffer) {
     int max = BUFFERSIZE-1;
     buffer[0]='/';
     int i = 1;
@@ -780,9 +776,9 @@ uint32_t pack40 (const char* buffer) {
 */
 bool valid40 (const char* buffer) {
     int t = 11;
-    for (int i=0; i<6; i++){
+    for (int i=0; i<6; i++) {
         if (toradix40(buffer[i]) < t) return false;
-        if (buffer[i+1] == 0) break;
+        if (buffer[i] == 0) break;
         t = 0;
     }
     return true;
@@ -905,6 +901,20 @@ int listlength (object* list) {
         length++;
     }
     return length;
+}
+
+/*
+    checkarguments - checks the arguments list in a special form such as with-xxx,
+    dolist, or dotimes.
+*/
+object* checkarguments (object* args, int min, int max) {
+    if (args == NULL) error2(noargument);
+    args = first(args);
+    if (!listp(args)) error(notalist, args);
+    int length = listlength(args);
+    if (length < min) error(toofewargs, args);
+    if (length > max) error(toomanyargs, args);
+    return args;
 }
 
 // Mathematical helper functions
@@ -1940,7 +1950,7 @@ pfun_t pstreamfun (object* args) {
 // Check pins
 
 void checkanalogread (int pin) {
-     
+    
 //   if (!(pin==0 || pin==2 || pin==4 || (pin>=12 && pin<=15) || (pin>=25 && pin<=27) || (pin>=32 && pin<=36) || pin==39))
 //     error(PSTR("invalid pin"), number(pin));
     (void)pin;
@@ -2333,8 +2343,7 @@ object* sp_setf (object* args, object* env) {
     It then returns result, or nil if result is omitted.
 */
 object* sp_dolist (object* args, object* env) {
-    if (args == NULL || listlength(first(args)) < 2) error2(noargument);
-    object* params = first(args);
+    object* params = checkarguments(args, 2, 3);
     object* var = first(params);
     object* list = eval(second(params), env);
     push(list, GCStack); // Don't GC the list
@@ -2448,14 +2457,10 @@ object* sp_untrace (object* args, object* env) {
     Returns the total number of milliseconds taken.
 */
 object* sp_formillis (object* args, object* env) {
-    if (args == NULL) error2(noargument);
-    object* param = first(args);
+    object* param = checkarguments(args, 0, 1);
     unsigned long start = millis();
     unsigned long now, total = 0;
-    if (param != NULL) {
-        if (atom(param)) error(notalist, param);
-        total = checkinteger(eval(first(param), env));
-    }
+    if (param != NULL) total = checkinteger(eval(first(param), env));
     eval(tf_progn(cdr(args),env), env);
     do {
         now = millis() - start;
@@ -2493,10 +2498,8 @@ object* sp_time (object* args, object* env) {
     Returns a string containing the output to the stream variable str.
 */
 object* sp_withoutputtostring (object* args, object* env) {
-    if (args == NULL) error2(noargument);
-    object* params = first(args);
+    object* params = checkarguments(args, 1, 1);
     if (params == NULL) error2(nostream);
-    if (atom(params)) error(notalist, params);
     object* var = first(params);
     object* pair = cons(var, stream(STRINGSTREAM, 0));
     push(pair,env);
@@ -2514,9 +2517,7 @@ object* sp_withoutputtostring (object* args, object* env) {
     The optional baud gives the baud rate divided by 100, default 96.
 */
 object* sp_withserial (object* args, object* env) {
-    object* params = first(args);
-    if (params == NULL) error2(nostream);
-    if (atom(params)) error(notalist, params);
+    object* params = checkarguments(args, 2, 3);
     object* var = first(params);
     int address = checkinteger(eval(second(params), env));
     params = cddr(params);
@@ -2538,9 +2539,7 @@ object* sp_withserial (object* args, object* env) {
     to be read from the stream. The port if specified is ignored.
 */
 object* sp_withi2c (object* args, object* env) {
-    object* params = first(args);
-    if (params == NULL) error2(nostream);
-    if (atom(params)) error(notalist, params);
+    object* params = checkarguments(args, 2, 4);
     object* var = first(params);
     int address = checkinteger(eval(second(params), env));
     params = cddr(params);
@@ -2568,9 +2567,7 @@ object* sp_withi2c (object* args, object* env) {
     bitorder 0 for LSBFIRST and 1 for MSBFIRST (default 1), and SPI mode (default 0).
 */
 object* sp_withspi (object* args, object* env) {
-    object* params = first(args);
-    if (params == NULL) error2(nostream);
-    if (atom(params)) error(notalist, params);
+    object* params = checkarguments(args, 2, 6);
     object* var = first(params);
     params = cdr(params);
     if (params == NULL) error2(nostream);
@@ -2611,9 +2608,7 @@ object* sp_withspi (object* args, object* env) {
 */
 object* sp_withsdcard (object* args, object* env) {
 #if defined(sdcardsupport)
-    object* params = first(args);
-    if (params == NULL) error2(nostream);
-    if (atom(params)) error(notalist, params);
+    object* params = checkarguments(args, 2, 3);
     object* var = first(params);
     params = cdr(params);
     if (params == NULL) error2(PSTR("no filename specified"));
@@ -4159,8 +4154,8 @@ object* fn_logxor (object* args, object* env) {
 }
 
 /*
-    (lognot number)
-    Returns the bitwise inverse of the number.
+    (lognot value)
+    Returns the bitwise logical NOT of the value.
 */
 object* fn_lognot (object* args, object* env) {
     (void) env;
@@ -5062,7 +5057,7 @@ object* fn_wificonnect (object* args, object* env) {
 */
 object* sp_withgfx (object* args, object* env) {
 #if defined(gfxsupport)
-    object* params = first(args);
+    object* params = checkarguments(args, 1, 1);
     object* var = first(params);
     object* pair = cons(var, stream(GFXSTREAM, 1));
     push(pair,env);
@@ -5383,9 +5378,6 @@ object* fn_invertdisplay (object* args, object* env) {
     return nil;
 }
 
-///////////////////////////////////////////////////////////
-// Experimental (catch) / (throw) support
-// also see Thrown global variable and garbage collector
 
 /*
     (catch 'tag form*)
@@ -5393,7 +5385,6 @@ object* fn_invertdisplay (object* args, object* env) {
     tag, returns the "thrown" value. If none throw, returns the value returned by the
     last form.
 */
-
 object* sp_catch (object* args, object* env) {
     object* current_GCStack = GCStack;
 
@@ -5470,13 +5461,10 @@ object* fn_throw (object* args, object* env) {
 }
 
 ///////////////////////////////////////////////////////////
-
-///////////////////////////////////////////////////////////
 // Experimental QUASIQUOTE support
 
 #define nope ((object*)-3)
 
-// From https://github.com/kanaka/mal/issues/103#issuecomment-159047401
 object* unquote (object* arg, object* env, int level) {
     if (arg == NULL || atom(arg)) return cons(bsymbol(QUOTE), cons(arg, NULL));
     object* what = first(arg);
@@ -6147,8 +6135,8 @@ const char doc155[] PROGMEM = "(logior [value*])\n"
 "Returns the bitwise | of the values.";
 const char doc156[] PROGMEM = "(logxor [value*])\n"
 "Returns the bitwise ^ of the values.";
-const char doc157[] PROGMEM = "(lognot number)\n"
-"Returns the bitwise inverse of the number.";
+const char doc157[] PROGMEM = "(lognot value)\n"
+"Returns the bitwise logical NOT of the value.";
 const char doc158[] PROGMEM = "(ash value shift)\n"
 "Returns the result of bitwise shifting value by shift bits. If shift is positive, value is shifted to the left.";
 const char doc159[] PROGMEM = "(logbitp bit value)\n"
@@ -6835,7 +6823,7 @@ object* eval (object* form, object* env) {
 */
 void pserial (char c) {
     LastPrint = c;
-    if (c == '\n') Serial.write('\r');
+    //if (c == '\n') Serial.write('\r');
     Serial.write(c);
 }
 
@@ -7364,15 +7352,12 @@ void repl (object* env) {
     for (;;) {
         randomSeed(micros());
         gc(NULL, env);
-        #if defined(printfreespace)
-        pint(Freespace, pserial);
-        #endif
         if (BreakLevel) {
             pfstring(PSTR(" : "), pserial);
             pint(BreakLevel, pserial);
         }
-        pserial('>'); pserial(' ');
-        Context = 0;
+        pfstring(PSTR("[Ready.]\n"), pserial);
+        Context = NIL;
         object* line = read(gserial);
         if (BreakLevel && line == nil) { pln(pserial); return; }
         if (line == (object*)CLOSE_PAREN) error2(PSTR("unmatched right bracket"));

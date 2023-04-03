@@ -1,32 +1,24 @@
 #! /usr/bin/env python3
-from sys import exit
 from serial import Serial, SerialException
 from argparse import ArgumentParser
-from prompt_toolkit import PromptSession, Application
-from prompt_toolkit.layout import VSplit, HSplit, BufferControl, Window
+from prompt_toolkit import Application
+from prompt_toolkit.layout import VSplit, HSplit
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.widgets import TextArea, Label, VerticalLine
-from prompt_toolkit.layout import Layout, ScrollablePane
-from prompt_toolkit.history import FileHistory
+from prompt_toolkit.widgets import (
+    TextArea, Label, VerticalLine, HorizontalLine)
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.validation import Validator, ValidationError
 from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.shortcuts import set_title
 from pygments.lexers.lisp import CommonLispLexer
 import re
-import os.path
 import asyncio
 
 
-WORKSPACESIZE = 9216 - 172
-FREE = WORKSPACESIZE
-
 input_queue = asyncio.Queue()
-
-HEADER_RE = re.compile(r"uLisp ([\d.ab]+)", re.M)
-PROMPT_RE = re.compile(r"(\d+)> ", re.M)
 
 
 class LispValidator(Validator):
@@ -46,26 +38,112 @@ class LispValidator(Validator):
             raise ValidationError(len(document.text), "Unclosed string")
 
 
-def submit_box(b: Buffer):
-    input_queue.put_nowait(b.document.text)
-    return False
+class Watcher:
+    all_watchers = []
+
+    def __init__(self, regex):
+        self.regex = re.compile(regex, re.M)
+        Watcher.all_watchers.append(self)
+
+    def __call__(self, fun):
+        self.fun = fun
+
+    def run(self, content: str) -> str:
+        if m := self.regex.search(content):
+            if self.fun(m):
+                content = content.replace(m.group(0), "", 1)
+        return content
 
 
-def mem_usage_indicator():
+def run_watchers(content: str) -> str:
+    changed = True
+    while changed:
+        changed = False
+        for w in Watcher.all_watchers:
+            old = content
+            content = w.run(content)
+            if content != old:
+                changed = True
+    return content
+
+
+WORKSPACESIZE = 1
+FREE = 0
+FREED = 0
+GC_COUNTER = 0
+LAST_ERROR = ""
+STATUS = "Loading..."
+RIGHT_STATUS = ""
+
+
+@Watcher(r"\{GC#(\d+):(\d+),(\d+)/(\d+)\}")
+def mem_usage_watcher(m: re.Match):
+    global GC_COUNTER
+    global FREED
+    global FREE
+    global WORKSPACESIZE
+    GC_COUNTER = int(m.group(1))
+    FREED = int(m.group(2))
+    FREE = int(m.group(3))
+    WORKSPACESIZE = int(m.group(4))
+    return True
+
+
+@Watcher(r"\[Ready.\]\n")
+def ready_watcher(m: re.Match):
+    global STATUS
+    if "error" not in STATUS.lower():
+        STATUS = "Ready."
+    return True
+
+
+@Watcher(r"\$!rs=(.*)!\$\n?")
+def right_status_watcher(m: re.Match):
+    global RIGHT_STATUS
+    RIGHT_STATUS = m.group(1)
+    return True
+
+
+@Watcher(r"waiting for download")
+def bootloader_watcher(m: re.Match):
+    raise SerialException("Device is in bootloader mode")
+
+
+@Watcher(r"(Error: [^\n]+)\n")
+def error_watcher(m: re.Match):
+    global STATUS
+    STATUS = m.group(1)
+    return True
+
+
+def memory_usage_bar():
     width = app.output.get_size().columns
     usage_percent = 1 - FREE / WORKSPACESIZE
-    s = f"{FREE} free ({round(usage_percent * 100, 2)}%) ["
-    e = "]"
+    s = f"{FREE}/{WORKSPACESIZE} free ({round(usage_percent * 100, 2)}%) ["
+    e = f"] (GC #{GC_COUNTER} freed {FREED})"
     if usage_percent > 0.75:
-        color = "#600"
+        color = "#F78"
     elif usage_percent > 0.5:
-        color = "#630"
+        color = "#E90"
     else:
-        color = "#040"
+        color = "#0B3"
     bw = width - len(s) - len(e)
     nb = round(bw * usage_percent)
     bar = "#" * nb + " " * (bw - nb)
-    return HTML(f"""<style bg="{color}">{s}{bar}{e}</style>""")
+    return HTML(f"""<style bg="{color}" fg="#000">{s}{bar}{e}</style>""")
+
+
+def status_bar():
+    width = app.output.get_size().columns
+    left = STATUS
+    right = RIGHT_STATUS
+    spaces = width - len(right) - len(left)
+    return HTML((left + " " * spaces + right).rstrip("\r\n"))
+
+
+def submit_box(b: Buffer):
+    input_queue.put_nowait(b.document.text)
+    return False
 
 
 lispbuffer = TextArea(
@@ -74,103 +152,105 @@ lispbuffer = TextArea(
     focus_on_click=True,
     scrollbar=True,
     validator=LispValidator(),
-)
+    history=InMemoryHistory(),
+    auto_suggest=AutoSuggestFromHistory())
+
 terminal = TextArea(
     read_only=True,
-    scrollbar=True,
-)
-cmdarea = TextArea(
+    scrollbar=True)
+
+command_bar = TextArea(
     scrollbar=False,
     wrap_lines=False,
     lexer=PygmentsLexer(CommonLispLexer),
-    height=1,
+    height=2,
     focus_on_click=True,
     validator=LispValidator(),
     accept_handler=submit_box,
     multiline=False,
-)
+    history=InMemoryHistory(),
+    auto_suggest=AutoSuggestFromHistory())
+
 app = Application(Layout(HSplit([
     VSplit([
         lispbuffer,
         VerticalLine(),
         terminal
     ]),
+    HorizontalLine(),
     VSplit([
         Label(text="cmd> ", dont_extend_width=True, dont_extend_height=True),
-        cmdarea,
+        command_bar,
     ]),
-    Label(text=mem_usage_indicator, dont_extend_height=True)
+    HorizontalLine(),
+    Label(text=status_bar, dont_extend_height=True),
+    Label(text=memory_usage_bar, dont_extend_height=True)
 ])), mouse_support=True, full_screen=True)
 
 
-def output(s: str):
-    if not s:
-        return
-    terminal.text += s.replace("\r\n", "\n")
-    for _ in range(s.count("\n")):
-        terminal.control.move_cursor_down()
-
-
-def parse_prompt(prompt: str) -> int:
-    if m := PROMPT_RE.search(prompt):
-        return int(m.group(1))
-    return 0
-
-
-def passthrough_until_prompt(port: Serial) -> str:
-    out = ""
-    while True:
-        line = port.read_until(b"\n").decode()
-        if line:
-            out += line
-        if PROMPT_RE.search(out) is not None:
-            return out
-        output(line)
+def output(s: str = ""):
+    terminal.text += s
+    terminal.text = terminal.text.replace("\r\n", "\n")
+    terminal.buffer.cursor_position = len(terminal.text)
 
 
 def startup(port: Serial) -> str:
-    set_title(f"uLisp on {port.port}")
+    set_title(f"uLisp on {port.port} ({port.name})")
     port.reset_input_buffer()
     port.dtr = False
     port.dtr = True
-    header = passthrough_until_prompt(port)
-    if m := HEADER_RE.search(header):
-        ver = " " + m.group(1)
-    else:
-        ver = ""
-    set_title(f"uLisp{ver} on {port.port}")
-    return header.rsplit("\n", 1)[-1]
+    output("\n---MCU RESET---\n")
 
 
-async def repl(port: Serial):
-    global FREE
-    with patch_stdout():
-        prompt = startup(port)
-        while True:
-            FREE = parse_prompt(prompt)
+async def repl_task(port: Serial):
+    global STATUS
+    startup(port)
+    await asyncio.sleep(0.1)
+    while True:
+        # allow other tasks to run
+        await asyncio.sleep(0.1)
+        if not input_queue.empty():
             send = await input_queue.get()
-            port.write(send.encode())
-            port.write(b"\n")
-            port.flush()
-            prompt = passthrough_until_prompt(port).rsplit("\n", 1)[-1]
+            match send:
+                case ".reset":
+                    startup(port)
+                    send = None
+                case ".quit":
+                    app.exit()
+                    return
+                case ".run":
+                    send = lispbuffer.text
+                    lispbuffer.buffer.append_to_history()
+                    lispbuffer.text = ""
+                case _:
+                    pass
+            if send is not None and send.strip():
+                STATUS = "Running..."
+                port.write(send.encode())
+                port.write(b"\n")
+                port.flush()
+            input_queue.task_done()
+        if port.in_waiting > 0:
+            terminal.text += port.read_all().decode()
+            terminal.text = run_watchers(terminal.text)
+            output()
 
 
 async def main():
-    a = ArgumentParser("term.py")
-    a.add_argument("-p", "--port", default="/dev/ttyUSB0")
-    a.add_argument("-b", "--baud", default=115200)
-    x = a.parse_args()
-    try:
-        port = Serial(x.port, x.baud, timeout=0.1, exclusive=True)
-    except SerialException:
-        exit(f"error: could not open {x.port}\n"
-             "- device plugged in?\n"
-             "- wrong port? (specify with -p PORT)\n")
+    argp = ArgumentParser("term.py")
+    argp.add_argument("-p", "--port", default="/dev/ttyUSB0")
+    argp.add_argument("-b", "--baud", default=115200)
+    foo = argp.parse_args()
+    port = Serial(foo.port, foo.baud, timeout=0.1, exclusive=True)
 
-    tasks = []
-    tasks.append(app.run_async())
-    tasks.append(repl(port))
-    await asyncio.gather(*tasks, return_exceptions=True)
+    @Watcher(r"uLisp ([\d.a-z]+)")
+    def version_watcher(m: re.Match):
+        nonlocal port
+        set_title(f"uLisp {m.group(1)} on {port.port} ({port.name})")
+
+    await asyncio.gather(
+        app.run_async(),
+        repl_task(port))
 
 
 if __name__ == '__main__':

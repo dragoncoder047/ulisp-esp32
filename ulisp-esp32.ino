@@ -1,7 +1,7 @@
-/* uLisp ESP Release 4.4 - www.ulisp.com
-     David Johnson-Davies - www.technoblogy.com - 21st March 2023
+/* uLisp ESP Release 4.4b - www.ulisp.com
+   David Johnson-Davies - www.technoblogy.com - 31st March 2023
 
-     Licensed under the MIT license: https://opensource.org/licenses/MIT
+   Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
 
 #include <ESP32Servo.h>
@@ -23,8 +23,8 @@
 #include "extensions.hpp"
 
 const char foo[] PROGMEM =
-"(defun load (filename) (with-sd-card (f filename) (loop (let ((form (read f))) (unless form (return)) (eval form)))))\n"
-"(load \"main.lisp\")\n"
+"(defun load(filename)(with-sd-card(f filename)(loop(let((form(read f)))(unless form(return))(eval form)))))"
+"(load \"main.lisp\")"
 ;
 const size_t foolen = arraysize(foo);
 size_t fooi = 0;
@@ -65,7 +65,7 @@ void setup () {
     while ((millis() - start) < 5000) { if (Serial) break; }
     ulispinit();
     addtable(ExtensionsTable);
-    Serial.println(F("\n\n\nuLisp 4.4!"));
+    Serial.println(F("\n\n\nuLisp 4.4b!"));
     sdmain();
 }
 
