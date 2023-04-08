@@ -181,7 +181,7 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTESPLICING, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -5491,7 +5491,7 @@ object* unquote (object* arg, object* env, int level) {
                     popandfree(GCStack);
                     return cons(cons(bsymbol(UNQUOTE), result), NULL);
                 }
-            case UNQUOTESPLICING:
+            case UNQUOTE_SPLICING:
                 if (level == 1) {
                     push(second(arg), GCStack);
                     result = unquote(second(arg), env, level);
@@ -5504,7 +5504,7 @@ object* unquote (object* arg, object* env, int level) {
                     push(second(arg), GCStack);
                     result = unquote(second(arg), env, level - 1);
                     popandfree(GCStack);
-                    return cons(cons(bsymbol(UNQUOTESPLICING), result), NULL);
+                    return cons(cons(bsymbol(UNQUOTE_SPLICING), result), NULL);
                 }
             default:
                 goto notspecial;
@@ -6695,7 +6695,7 @@ object* eval (object* form, object* env) {
     object* function = car(form);
     object* args = cdr(form);
 
-    if (function == NULL) error(PSTR("illegal function"), nil);
+    if (function == NULL) error2(PSTR("can't call nil"));
     if (!listp(args)) error(PSTR("can't evaluate a dotted pair"), args);
 
     // List starts with a builtin symbol?
@@ -6746,6 +6746,7 @@ object* eval (object* form, object* env) {
 
         if (ft == TAIL_FORMS) {
             Context = name;
+            checkargs(args);
             form = ((fn_ptr_type)lookupfn(name))(args, env);
             TC = 1;
             goto EVAL;

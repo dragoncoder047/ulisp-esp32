@@ -50,8 +50,8 @@ class Watcher:
 
     def run(self, content: str) -> str:
         if m := self.regex.search(content):
-            if self.fun(m):
-                content = content.replace(m.group(0), "", 1)
+            self.fun(m)
+            content = content.replace(m.group(0), "", 1)
         return content
 
 
@@ -86,7 +86,6 @@ def mem_usage_watcher(m: re.Match):
     FREED = int(m.group(2))
     FREE = int(m.group(3))
     WORKSPACESIZE = int(m.group(4))
-    return True
 
 
 @Watcher(r"\[Ready.\]\n")
@@ -94,14 +93,12 @@ def ready_watcher(m: re.Match):
     global STATUS
     if "error" not in STATUS.lower():
         STATUS = "Ready."
-    return True
 
 
 @Watcher(r"\$!rs=(.*)!\$\n?")
 def right_status_watcher(m: re.Match):
     global RIGHT_STATUS
     RIGHT_STATUS = m.group(1)
-    return True
 
 
 @Watcher(r"waiting for download")
@@ -113,13 +110,11 @@ def bootloader_watcher(m: re.Match):
 def error_watcher(m: re.Match):
     global STATUS
     STATUS = m.group(1)
-    return True
 
 
 @Watcher(r"\a")
 def bell_watcher(m: re.Match):
     app.output.bell()
-    return True
 
 
 def memory_usage_bar():
