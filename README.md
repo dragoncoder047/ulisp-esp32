@@ -26,6 +26,7 @@ Extensions (`extensions.hpp`):
 * `gensym`
 * `intern`
 * `sizeof`
+* Everything from the [ulisp-bignums](https://github.com/technoblogy/ulisp-bignums) extension
 
 ## `term.py` -- enhanced uLisp interface
 

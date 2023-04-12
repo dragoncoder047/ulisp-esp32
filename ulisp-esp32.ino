@@ -21,6 +21,7 @@
 // Includes
 #include "ulisp.hpp"
 #include "extensions.hpp"
+#include "bignums.hpp"
 
 const char foo[] PROGMEM =
 "(defun load(filename)(with-sd-card(f filename)(loop(let((form(read f)))(unless form(return))(eval form)))))"
@@ -65,6 +66,7 @@ void setup () {
     while ((millis() - start) < 5000) { if (Serial) break; }
     ulispinit();
     addtable(ExtensionsTable);
+    addtable(BignumsTable);
     Serial.println(F("\n\n\nuLisp 4.4b!"));
     sdmain();
 }
