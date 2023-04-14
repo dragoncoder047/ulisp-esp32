@@ -191,7 +191,7 @@ object *bignum_div (object *bignum1, object *bignum2, object *env) {
     push(number(0), current); push(number(0), denom); // upshift current and denom 1 word
     push(current, GCStack);
     maybe_gc(denom, env);
-    pop(GCStack);
+    popandfree(GCStack);
   }
 
   object *result = int_to_bignum(0);
@@ -204,7 +204,7 @@ object *bignum_div (object *bignum1, object *bignum2, object *env) {
     downshift_bit(current); downshift_bit(denom);
     push(current, GCStack); push(remainder, GCStack); push(denom, GCStack);
     maybe_gc(result, env);
-    pop(GCStack); pop(GCStack); pop(GCStack);
+    popandfree(GCStack); popandfree(GCStack); popandfree(GCStack);
   }
   return cons(result, cons(remainder, NULL));
 }
@@ -304,7 +304,7 @@ object *fn_Sbignumstring (object *args, object *env) {
     while(!bignum_zerop(bignum)) {
       push(bignum, GCStack); push(base, GCStack); push(list, GCStack);
       object *result = bignum_div(bignum, base, env);
-      pop(GCStack); pop(GCStack); pop(GCStack);
+      popandfree(GCStack); popandfree(GCStack); popandfree(GCStack);
       object *remainder = car(second(result));
       bignum = first(result);
       push(remainder, list);
@@ -353,7 +353,7 @@ object *fn_Sstringbignum (object *args, object *env) {
       if (d >= b) error(PSTR("illegal character in bignum"), character(ch));
       push(result, GCStack); push(base, GCStack);
       result = bignum_mul(result, base, env);
-      pop(GCStack); pop(GCStack);
+      popandfree(GCStack); popandfree(GCStack);
       result = bignum_add(result, cons(number(d), NULL));
     }
     form = car(form);
