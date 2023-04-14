@@ -50,8 +50,8 @@ class Watcher:
 
     def run(self, content: str) -> str:
         if m := self.regex.search(content):
-            self.fun(m)
-            content = content.replace(m.group(0), "", 1)
+            foo = self.fun(m) or ""
+            content = content.replace(m.group(0), foo, 1)
         return content
 
 
@@ -106,10 +106,11 @@ def bootloader_watcher(m: re.Match):
     raise SerialException("Device is in bootloader mode")
 
 
-@Watcher(r"(Error: [^\n]+)\n")
+@Watcher(r"(Error: ([^\n]+))\n")
 def error_watcher(m: re.Match):
     global STATUS
     STATUS = m.group(1)
+    return m.group(2)
 
 
 @Watcher(r"\a")
@@ -230,7 +231,7 @@ async def repl_task(port: Serial):
             if send is not None and send.strip():
                 STATUS = "Running..."
                 port.write(send.encode())
-                port.write(b"\n")
+                port.write(b"\r\n")
                 port.flush()
             input_queue.task_done()
         if port.in_waiting > 0:
@@ -250,6 +251,7 @@ async def main():
     def version_watcher(m: re.Match):
         nonlocal port
         set_title(f"uLisp {m.group(1)} on {port.port} ({port.name})")
+        return f"uLisp version {m.group(1)}"
 
     await asyncio.gather(
         app.run_async(),

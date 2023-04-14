@@ -189,9 +189,9 @@ object *bignum_div (object *bignum1, object *bignum2, object *env) {
   object *denom = copylist(bignum2);
   while (bignum_cmp(denom, bignum1) != LARGER) {
     push(number(0), current); push(number(0), denom); // upshift current and denom 1 word
-    push(current, GCStack);
+    protect(current);
     maybe_gc(denom, env);
-    popandfree(GCStack);
+    unprotect();
   }
 
   object *result = int_to_bignum(0);
@@ -202,9 +202,9 @@ object *bignum_div (object *bignum1, object *bignum2, object *env) {
       result = do_operator(result, current, op_ior);
     }
     downshift_bit(current); downshift_bit(denom);
-    push(current, GCStack); push(remainder, GCStack); push(denom, GCStack);
+    protect(current); protect(remainder); protect(denom);
     maybe_gc(result, env);
-    popandfree(GCStack); popandfree(GCStack); popandfree(GCStack);
+    unprotect(); unprotect(); unprotect();
   }
   return cons(result, cons(remainder, NULL));
 }
@@ -302,9 +302,9 @@ object *fn_Sbignumstring (object *args, object *env) {
     p = 100000000;
     object *base = cons(number(p*10), NULL);
     while(!bignum_zerop(bignum)) {
-      push(bignum, GCStack); push(base, GCStack); push(list, GCStack);
+      protect(bignum); protect(base); protect(list);
       object *result = bignum_div(bignum, base, env);
-      popandfree(GCStack); popandfree(GCStack); popandfree(GCStack);
+      unprotect(); unprotect(); unprotect();
       object *remainder = car(second(result));
       bignum = first(result);
       push(remainder, list);
@@ -351,9 +351,9 @@ object *fn_Sstringbignum (object *args, object *env) {
       if (!ch) break;
       int d = digitvalue(ch);
       if (d >= b) error(PSTR("illegal character in bignum"), character(ch));
-      push(result, GCStack); push(base, GCStack);
+      protect(result); protect(base);
       result = bignum_mul(result, base, env);
-      popandfree(GCStack); popandfree(GCStack);
+      unprotect(); unprotect();
       result = bignum_add(result, cons(number(d), NULL));
     }
     form = car(form);

@@ -51,9 +51,9 @@ void sdmain () {
     for(;;) {
         fooform = read(getfoo);
         if (fooform == NULL) return;
-        push(fooform, GCStack);
+        protect(fooform);
         eval(fooform, NULL);
-        popandfree(GCStack);
+        unprotect();
     }
 }
 
