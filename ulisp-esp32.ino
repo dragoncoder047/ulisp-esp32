@@ -53,7 +53,7 @@ void sdmain () {
         if (fooform == NULL) return;
         push(fooform, GCStack);
         eval(fooform, NULL);
-        pop(GCStack);
+        popandfree(GCStack);
     }
 }
 
