@@ -31,17 +31,17 @@ const char docnow[] PROGMEM = "(now [hh mm ss])\n"
 "as a list of three integers (hh mm ss).";
 
 object* fn_gensym (object* args, object* env) {
-    int counter = 0;
-    char buffer[BUFFERSIZE];
+    unsigned int counter = 0;
+    char buffer[BUFFERSIZE+10];
     char prefix[BUFFERSIZE];
     if (args != NULL) {
-        cstring(checkstring(first(args)), prefix, BUFFERSIZE);
+        cstring(checkstring(first(args)), prefix, sizeof(prefix));
     } else {
         strcpy(prefix, "$gensym");
     }
     object* result;
     do {
-        snprintf(buffer, BUFFERSIZE, "%s%i", prefix, counter);
+        snprintf(buffer, sizeof(buffer), "%s%u", prefix, counter);
         result = buftosymbol(buffer);
         counter++;
     } while (boundp(result, env) || boundp(result, GlobalEnv));

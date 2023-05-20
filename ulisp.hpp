@@ -16,7 +16,6 @@
 #include <stdlib.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <EEPROM.h>
 #include <WiFi.h>
 
 // Lisp Library
@@ -285,6 +284,9 @@ void errorsub (symbol_t fname, PGM_P string) {
     pfstring(string, pserial);
 }
 
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void errorend () { GCStack = NULL; longjmp(*handler, 1); }
 
 /*
@@ -292,6 +294,9 @@ void errorend () { GCStack = NULL; longjmp(*handler, 1); }
     Prints: "Error: 'fname' string: symbol", where fname is the name of the user Lisp function in which the error occurred,
     and symbol is the object generating the error.
 */
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void errorsym (symbol_t fname, PGM_P string, object* symbol) {
     if (!tstflag(MUFFLEERRORS)) {
         errorsub(fname, string);
@@ -306,6 +311,9 @@ void errorsym (symbol_t fname, PGM_P string, object* symbol) {
     errorsym2 - prints an error message and reenters the REPL.
     Prints: "Error: 'fname' string", where fname is the name of the user Lisp function in which the error occurred.
 */
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void errorsym2 (symbol_t fname, PGM_P string) {
     if (!tstflag(MUFFLEERRORS)) {
         errorsub(fname, string);
@@ -319,6 +327,9 @@ void errorsym2 (symbol_t fname, PGM_P string) {
     Prints: "Error: 'Context' string: symbol", where Context is the name of the built-in Lisp function in which the error occurred,
     and symbol is the object generating the error.
 */
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void error (PGM_P string, object* symbol) {
     errorsym(sym(Context), string, symbol);
 }
@@ -327,6 +338,9 @@ void error (PGM_P string, object* symbol) {
     error2 - prints an error message and reenters the REPL.
     Prints: "Error: 'Context' string", where Context is the name of the built-in Lisp function in which the error occurred.
 */
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void error2 (PGM_P string) {
     errorsym2(sym(Context), string);
 }
@@ -334,6 +348,9 @@ void error2 (PGM_P string) {
 /*
     formaterr - displays a format error with a ^ pointing to the error
 */
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void formaterr (object* formatstr, PGM_P string, uint8_t p) {
     pln(pserial); indent(4, ' ', pserial); printstring(formatstr, pserial); pln(pserial);
     indent(p+5, ' ', pserial); pserial('^');
@@ -1829,14 +1846,15 @@ void I2Cwrite (uint8_t data) {
 }
 
 bool I2Cstart (uint8_t address, uint8_t read) {
- int ok = true;
- if (read == 0) {
-     Wire.beginTransmission(address);
-     ok = (Wire.endTransmission(true) == 0);
-     Wire.beginTransmission(address);
- }
- else Wire.requestFrom(address, I2Ccount);
- return ok;
+   int ok = true;
+   if (read == 0) {
+       Wire.setClock(10000); // Low speed mode (still pretty fast)
+       Wire.beginTransmission(address);
+       ok = (Wire.endTransmission(true) == 0);
+       Wire.beginTransmission(address);
+   }
+   else Wire.requestFrom(address, I2Ccount);
+   return ok;
 }
 
 bool I2Crestart (uint8_t address, uint8_t read) {
@@ -5468,8 +5486,8 @@ object* fn_throw (object* args, object* env) {
 object* unquote (object* arg, object* env, int level) {
     if (arg == NULL || atom(arg)) return cons(bsymbol(QUOTE), cons(arg, NULL));
     object* what = first(arg);
-    object* result;
-    object* result2;
+    object* result = NULL;
+    object* result2 = NULL;
     if (what->type == SYMBOL) {
         switch (builtin(what->name)) {
             case QUASIQUOTE:
