@@ -1868,6 +1868,8 @@ bool I2Crestart (uint8_t address, uint8_t read) {
 
 void I2Cstop (uint8_t read) {
     if (read == 0) Wire.endTransmission(); // Check for error?
+    // Release pins
+    Wire.end();
 }
 
 // Streams
@@ -4403,7 +4405,7 @@ object* fn_writeline (object* args, object* env) {
 */
 object* fn_restarti2c (object* args, object* env) {
     (void) env;
-    int stream = first(args)->integer;
+    int stream = isstream(first(args));
     args = cdr(args);
     int read = 0; // Write
     I2Ccount = 0;

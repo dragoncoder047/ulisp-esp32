@@ -210,34 +210,38 @@ async def repl_task(port: Serial):
     global STATUS
     startup(port)
     await asyncio.sleep(0.1)
-    while True:
-        # allow other tasks to run
-        await asyncio.sleep(0.1)
-        if not input_queue.empty():
-            send = await input_queue.get()
-            match send:
-                case ".reset":
-                    startup(port)
-                    send = None
-                case ".quit":
-                    app.exit()
-                    return
-                case ".run":
-                    send = lispbuffer.text
-                    lispbuffer.buffer.append_to_history()
-                    lispbuffer.text = ""
-                case _:
-                    pass
-            if send is not None and send.strip():
-                STATUS = "Running..."
-                port.write(send.encode())
-                port.write(b"\r\n")
-                port.flush()
-            input_queue.task_done()
-        if port.in_waiting > 0:
-            terminal.text += port.read_all().decode()
-            terminal.text = run_watchers(terminal.text)
-            output()
+    try:
+        while True:
+            # allow other tasks to run
+            await asyncio.sleep(0.1)
+            if not input_queue.empty():
+                send = await input_queue.get()
+                match send:
+                    case ".reset":
+                        startup(port)
+                        send = None
+                    case ".quit":
+                        app.exit()
+                        return
+                    case ".run":
+                        send = lispbuffer.text
+                        lispbuffer.buffer.append_to_history()
+                        lispbuffer.text = ""
+                    case _:
+                        pass
+                if send is not None and send.strip():
+                    STATUS = "Running..."
+                    port.write(send.encode())
+                    port.write(b"\r\n")
+                    port.flush()
+                input_queue.task_done()
+            if port.in_waiting > 0:
+                terminal.text += port.read_all().decode()
+                terminal.text = run_watchers(terminal.text)
+                output()
+    except SerialException:
+        output("Communication error, closing serial port...\n")
+        port.close()
 
 
 async def main():
