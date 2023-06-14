@@ -1567,7 +1567,7 @@ uint32_t ipstring (object* form) {
         for (int i=(sizeof(int)-1)*8; i>=0; i=i-8) {
             char ch = chars>>i & 0xFF;
             if (ch) {
-                if (ch == '.') { p++; if (p > 3) error2(PSTR("illegal IP address")); }
+                if (ch == '.') { p++; if (p > 3) error(PSTR("illegal IP address"), form); }
                 else ipbytes[p] = (ipbytes[p] * 10) + ch - '0';
             }
         }
@@ -1850,7 +1850,6 @@ void I2Cwrite (uint8_t data) {
 bool I2Cstart (uint8_t address, uint8_t read) {
    int ok = true;
    if (read == 0) {
-       Wire.setClock(10000); // Low speed mode (still pretty fast)
        Wire.beginTransmission(address);
        ok = (Wire.endTransmission(true) == 0);
        Wire.beginTransmission(address);

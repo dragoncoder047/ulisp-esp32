@@ -24,8 +24,10 @@
 #include "bignums.hpp"
 
 const char foo[] PROGMEM =
-"(defun load(filename)(with-sd-card(f filename)(loop(let((form(read f)))(unless form(return))(eval form)))))"
+"(defvar *loaded* nil)"
+"(defun load(filename)(if(null(search(list filename)*loaded*))(with-sd-card(f filename)(push filename *loaded*)(loop(let((form(read f)))(unless form(return))(eval form))))))"
 "(load \"main.lisp\")"
+"(princ \"main.lisp returned, entering REPL...\")"
 ;
 const size_t foolen = arraysize(foo);
 size_t fooi = 0;
