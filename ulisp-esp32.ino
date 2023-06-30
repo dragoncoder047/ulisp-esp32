@@ -1,5 +1,5 @@
-/* uLisp ESP Release 4.4b - www.ulisp.com
-   David Johnson-Davies - www.technoblogy.com - 31st March 2023
+/* uLisp ESP Release 4.4d - www.ulisp.com
+   David Johnson-Davies - www.technoblogy.com - 30th June 2023
 
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
@@ -69,7 +69,7 @@ void setup () {
     ulispinit();
     addtable(ExtensionsTable);
     addtable(BignumsTable);
-    Serial.println(F("\n\n\nuLisp 4.4b!"));
+    Serial.println(F("\n\n\nuLisp 4.4d-mod!"));
     sdmain();
 }
 

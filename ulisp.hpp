@@ -1,5 +1,5 @@
-/* uLisp ESP Release 4.4b - www.ulisp.com
-   David Johnson-Davies - www.technoblogy.com - 31st March 2023
+/* uLisp ESP Release 4.4d - www.ulisp.com
+   David Johnson-Davies - www.technoblogy.com - 30th June 2023
 
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
@@ -72,17 +72,17 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define car(x)             (((object*)(x))->car)
 #define cdr(x)             (((object*)(x))->cdr)
 
-#define first(x)           (car(x))
-#define rest(x)            (cdr(x))
-#define second(x)          (first(rest(x)))
-#define cddr(x)            (cdr(cdr(x)))
-#define third(x)           (first(cddr(x)))
+#define first(x)           car(x)
+#define rest(x)            cdr(x)
+#define second(x)          first(rest(x))
+#define cddr(x)            cdr(cdr(x))
+#define third(x)           first(cddr(x))
 
 #define push(x, y)         ((y) = cons((x), (y)))
 #define pop(y)             ((y) = cdr(y))
 
 #define protect(y)         push((y), GCStack)
-#define unprotect()        do { object* __old__GCStack = GCStack; pop(GCStack); myfree(__old__GCStack); } while(0)
+#define unprotect()        pop(GCStack)
 
 #define integerp(x)        ((x) != NULL && (x)->type == NUMBER)
 #define floatp(x)          ((x) != NULL && (x)->type == FLOAT)
@@ -182,7 +182,7 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -734,7 +734,7 @@ bool listp (object* x) {
     quoteit - quote a symbol with the specified type of quote
 */
 
-object* quoteit (symbol_t q, object* it) {
+object* quoteit (builtin_t q, object* it) {
     return cons(bsymbol(q), cons(it, nil));
 }
 
@@ -1005,14 +1005,6 @@ object* divide_floats (object* args, float fresult) {
         args = cdr(args);
     }
     return makefloat(fresult);
-}
-
-/*
-    myround - rounds
-    Returns t if the argument is a floating-point number.
-*/
-int myround (float number) {
-    return (number >= 0) ? (int)(number + 0.5) : (int)(number - 0.5);
 }
 
 /*
@@ -1354,13 +1346,13 @@ object* copystring (object* arg) {
     readstring - reads characters from an input stream up to delimiter delim
     and returns a Lisp string
 */
-object* readstring (char delim, gfun_t gfun) {
+object* readstring (char delim, bool do_escape, gfun_t gfun) {
     object* obj = newstring();
     object* tail = obj;
     int ch = gfun();
     if (ch == -1) return nil;
     while ((ch != delim) && (ch != -1)) {
-        if (ch == '\\') ch = gfun();
+        if (do_escape && ch == '\\') ch = gfun();
         buildstring(ch, &tail);
         ch = gfun();
     }
@@ -1420,6 +1412,21 @@ int gstr () {
 */
 void pstr (char c) {
     buildstring(c, &GlobalStringTail);
+}
+
+/*
+    iptostring - converts an Arduino IPAddress into the string representation of it.
+    It assumes it is an IPv4 address and won't work for IPv6.
+*/
+object* iptostring (IPAddress ip) {
+    union { uint32_t data2; uint8_t u8[4]; };
+    object *obj = startstring();
+    data2 = ip;
+    for (int i=0; i<4; i++) {
+        if (i) pstr('.');
+        pintbase(u8[i], 10, pstr);
+    }
+    return obj;
 }
 
 /*
@@ -2633,7 +2640,10 @@ object* sp_withsdcard (object* args, object* env) {
     object* var = first(params);
     params = cdr(params);
     if (params == NULL) error2(PSTR("no filename specified"));
-    object* filename = eval(first(params), env);
+    builtin_t temp = Context;
+    object *filename = eval(first(params), env);
+    Context = temp;
+    if (!stringp(filename)) error(PSTR("filename is not a string"), filename);
     params = cdr(params);
     SD.begin();
     int mode = 0;
@@ -3867,8 +3877,8 @@ object* fn_round (object* args, object* env) {
     (void) env;
     object* arg = first(args);
     args = cdr(args);
-    if (args != NULL) return number(myround(checkintfloat(arg) / checkintfloat(first(args))));
-    else return number(myround(checkintfloat(arg)));
+    if (args != NULL) return number(round(checkintfloat(arg) / checkintfloat(first(args))));
+    else return number(round(checkintfloat(arg)));
 }
 
 // Characters
@@ -4350,7 +4360,7 @@ object* fn_readbyte (object* args, object* env) {
 object* fn_readline (object* args, object* env) {
     (void) env;
     gfun_t gfun = gstreamfun(args);
-    return readstring('\n', gfun);
+    return readstring('\n', false, gfun);
 }
 
 /*
@@ -5029,7 +5039,7 @@ object* fn_wifisoftap (object* args, object* env) {
         }
         WiFi.softAP(cstring(first, ssid, 33), cstring(second, pass, 65), channel, hidden);
     }
-    return lispstring((char*)WiFi.softAPIP().toString().c_str());
+    return iptostring(WiFi.softAPIP());
 }
 
 /*
@@ -5048,7 +5058,7 @@ object* fn_connected (object* args, object* env) {
 */
 object* fn_wifilocalip (object* args, object* env) {
     (void) args, (void) env;
-    return lispstring((char*)WiFi.localIP().toString().c_str());
+    return iptostring(WiFi.localIP());
 }
 
 /*
@@ -5062,7 +5072,7 @@ object* fn_wificonnect (object* args, object* env) {
     if (cdr(args) == NULL) WiFi.begin(cstring(first(args), ssid, 33));
     else WiFi.begin(cstring(first(args), ssid, 33), cstring(second(args), pass, 65));
     int result = WiFi.waitForConnectResult();
-    if (result == WL_CONNECTED) return lispstring((char*)WiFi.localIP().toString().c_str());
+    if (result == WL_CONNECTED) return iptostring(WiFi.localIP());
     else if (result == WL_NO_SSID_AVAIL) error2(PSTR("network not found"));
     else if (result == WL_CONNECT_FAILED) error2(PSTR("connection failed"));
     else error2(PSTR("unable to connect"));
@@ -5483,75 +5493,47 @@ object* fn_throw (object* args, object* env) {
 
 ///////////////////////////////////////////////////////////
 // Experimental QUASIQUOTE support
+// see https://github.com/kanaka/mal/blob/master/process/guide.md#step-7-quoting
 
-#define nope ((object*)-3)
-
-object* unquote (object* arg, object* env, int level) {
-    if (arg == NULL || atom(arg)) return cons(bsymbol(QUOTE), cons(arg, NULL));
-    object* what = first(arg);
+object* reverse (object* what) {
     object* result = NULL;
-    object* result2 = NULL;
-    if (what->type == SYMBOL) {
-        switch (builtin(what->name)) {
-            case QUASIQUOTE:
-                protect(second(arg));
-                result = unquote(second(arg), env, level + 1);
-                unprotect();
-                return cons(cons(bsymbol(QUASIQUOTE), result), NULL);
-            case UNQUOTE:
-                if (level == 1) {
-                    protect(second(arg));
-                    result = unquote(second(arg), env, level);
-                    car(GCStack) = result;
-                    result = eval(car(result), env);
-                    unprotect();
-                    return cons(result, NULL);
-                } else {
-                    protect(second(arg));
-                    result = unquote(second(arg), env, level - 1);
-                    unprotect();
-                    return cons(cons(bsymbol(UNQUOTE), result), NULL);
-                }
-            case UNQUOTE_SPLICING:
-                if (level == 1) {
-                    protect(second(arg));
-                    result = unquote(second(arg), env, level);
-                    car(GCStack) = result;
-                    result = eval(car(result), env);
-                    unprotect();
-                    if (result == NULL) return nope;
-                    else return result;
-                } else {
-                    protect(second(arg));
-                    result = unquote(second(arg), env, level - 1);
-                    unprotect();
-                    return cons(cons(bsymbol(UNQUOTE_SPLICING), result), NULL);
-                }
-            default:
-                goto notspecial;
-        }
-    } else {
-        notspecial:
-        for (object* x = arg; x != NULL; x = cdr(x)) {
-            protect(car(x));
-            object* foo = unquote(car(x), env, level);
-            unprotect();
-            if (foo != nope) push(foo, result);
-        }
-        // Reverse and flatten
-        for (object* y = result; y != NULL; y = cdr(y)) {
-            if (atom(car(y))) push(car(y), result2);
-            else for (object* z = car(y); z != NULL; z = cdr(z)) push(car(z), result2);
-        }
-        return cons(result2, NULL);
+    for (; what != NULL; what = cdr(what)) {
+        push(car(what), result);
     }
+    return result;
 }
 
-object* sp_quasiquote (object* args, object* env) {
-    checkargs(args);
-    protect(first(args));
-    object* result = unquote(first(args), env, 1);
-    unprotect();
+object* process_quasiquote (object* arg) {
+    // "If ast is a map or a symbol, return a list containing: the "quote" symbol, then ast."
+    if (arg == NULL || atom(arg)) return quoteit(QUOTE, arg);
+    // "If ast is a list starting with the "unquote" symbol, return its second element."
+    if (listp(arg) && symbolp(first(arg)) && builtin(first(arg)->name) == UNQUOTE) return second(arg);
+    // "If ast is a list failing previous test, the result will be a list populated by the following process."
+    // "The result is initially an empty list. Iterate over each element elt of ast in reverse order:"
+    object* result = NULL;
+    object* rev_arg = reverse(arg);
+    for (; rev_arg != NULL; rev_arg = cdr(rev_arg)) {
+        object* element = car(rev_arg);
+        // "If elt is a list starting with the "splice-unquote" symbol,
+        // replace the current result with a list containing: the "concat" symbol,
+        // the second element of elt, then the previous result."
+        if (listp(element) && symbolp(first(element)) && builtin(first(element)->name) == UNQUOTE_SPLICING)
+            result = cons(bsymbol(APPEND), cons(second(element), cons(result, nil)));
+        // "Else replace the current result with a list containing:
+        // the "cons" symbol, the result of calling quasiquote with
+        // elt as argument, then the previous result."
+        else result = cons(bsymbol(CONS), cons(process_quasiquote(element), cons(result, nil)));
+    }
+    return result;
+}
+
+// "Add the quasiquote special form. This form does the same than quasiquoteexpand,
+// but evaluates the result in the current environment before returning it, either by
+// recursively calling EVAL with the result and env, or by assigning ast with the result
+// and continuing execution at the top of the loop (TCO)."
+object* tf_quasiquote (object* args, object* env) {
+    object* result = process_quasiquote(first(args));
+    // Tail call
     return result;
 }
 
@@ -5582,6 +5564,8 @@ const char string13[] PROGMEM = "quote";
 const char stringquasiquote[] PROGMEM = "quasiquote";
 const char stringunquote[] PROGMEM = "unquote";
 const char stringuqsplicing[] PROGMEM = "unquote-splicing";
+const char string57[] PROGMEM = "cons";
+const char string92[] PROGMEM = "append";
 const char string14[] PROGMEM = "defun";
 const char string15[] PROGMEM = "defvar";
 const char string16[] PROGMEM = "car";
@@ -5625,7 +5609,6 @@ const char string53[] PROGMEM = "case";
 const char string54[] PROGMEM = "and";
 const char string55[] PROGMEM = "not";
 const char string56[] PROGMEM = "null";
-const char string57[] PROGMEM = "cons";
 const char string58[] PROGMEM = "atom";
 const char string59[] PROGMEM = "listp";
 const char string60[] PROGMEM = "consp";
@@ -5660,7 +5643,6 @@ const char string88[] PROGMEM = "assoc";
 const char string89[] PROGMEM = "member";
 const char string90[] PROGMEM = "apply";
 const char string91[] PROGMEM = "funcall";
-const char string92[] PROGMEM = "append";
 const char string93[] PROGMEM = "mapc";
 const char string94[] PROGMEM = "mapcar";
 const char string95[] PROGMEM = "mapcan";
@@ -5826,6 +5808,9 @@ const char doc9[] PROGMEM = "(let ((var value) ... ) forms*)\n"
 const char doc10[] PROGMEM = "(let* ((var value) ... ) forms*)\n"
 "Declares local variables with values, and evaluates the forms with those local variables.\n"
 "Each declaration can refer to local variables that have been defined earlier in the let*.";
+const char doc57[] PROGMEM = "(cons item item)\n"
+"If the second argument is a list, cons returns a new list with item added to the front of the list.\n"
+"If the second argument isn't a list cons returns a dotted pair.";
 const char doc14[] PROGMEM = "(defun name (parameters) form*)\n"
 "Defines a function.";
 const char doc15[] PROGMEM = "(defvar variable form)\n"
@@ -5930,9 +5915,6 @@ const char doc54[] PROGMEM = "(and item*)\n"
 "Evaluates its arguments until one returns nil, and returns the last value.";
 const char doc55[] PROGMEM = "(not item)\n"
 "Returns t if its argument is nil, or nil otherwise. Equivalent to null.";
-const char doc57[] PROGMEM = "(cons item item)\n"
-"If the second argument is a list, cons returns a new list with item added to the front of the list.\n"
-"If the second argument isn't a list cons returns a dotted pair.";
 const char doc58[] PROGMEM = "(atom item)\n"
 "Returns t if its argument is a single number, symbol, or nil.";
 const char doc59[] PROGMEM = "(listp item)\n"
@@ -6346,9 +6328,11 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string11, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), NULL },
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringquasiquote, sp_quasiquote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringquasiquote, tf_quasiquote, MINMAX(TAIL_FORMS, 1, 1), NULL },
     { stringunquote, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { stringuqsplicing, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
+    { string92, fn_append, MINMAX(FUNCTIONS, 0, UNLIMITED), doc92 },
     { string14, sp_defun, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc14 },
     { string15, sp_defvar, MINMAX(SPECIAL_FORMS, 1, 3), doc15 },
     { string16, fn_car, MINMAX(FUNCTIONS, 1, 1), doc16 },
@@ -6392,7 +6376,6 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string54, tf_and, MINMAX(TAIL_FORMS, 0, UNLIMITED), doc54 },
     { string55, fn_not, MINMAX(FUNCTIONS, 1, 1), doc55 },
     { string56, fn_not, MINMAX(FUNCTIONS, 1, 1), NULL },
-    { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
     { string58, fn_atom, MINMAX(FUNCTIONS, 1, 1), doc58 },
     { string59, fn_listp, MINMAX(FUNCTIONS, 1, 1), doc59 },
     { string60, fn_consp, MINMAX(FUNCTIONS, 1, 1), doc60 },
@@ -6427,7 +6410,6 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string89, fn_member, MINMAX(FUNCTIONS, 2, 2), doc89 },
     { string90, fn_apply, MINMAX(FUNCTIONS, 2, UNLIMITED), doc90 },
     { string91, fn_funcall, MINMAX(FUNCTIONS, 1, UNLIMITED), doc91 },
-    { string92, fn_append, MINMAX(FUNCTIONS, 0, UNLIMITED), doc92 },
     { string93, fn_mapc, MINMAX(FUNCTIONS, 2, UNLIMITED), doc93 },
     { string94, fn_mapcar, MINMAX(FUNCTIONS, 2, UNLIMITED), doc94 },
     { string95, fn_mapcan, MINMAX(FUNCTIONS, 2, UNLIMITED), doc95 },
@@ -7191,7 +7173,7 @@ object* nextitem (gfun_t gfun) {
     }
 
     // Parse string
-    if (ch == '"') return readstring('"', gfun);
+    if (ch == '"') return readstring('"', true, gfun);
 
     // Parse symbol, character, or number
     int index = 0, base = 10, sign = 1;
