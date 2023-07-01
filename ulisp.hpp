@@ -5491,8 +5491,7 @@ object* fn_throw (object* args, object* env) {
     return NULL;
 }
 
-///////////////////////////////////////////////////////////
-// Experimental QUASIQUOTE support
+// QUASIQUOTE support
 // see https://github.com/kanaka/mal/blob/master/process/guide.md#step-7-quoting
 
 object* reverse (object* what) {
@@ -5811,6 +5810,8 @@ const char doc10[] PROGMEM = "(let* ((var value) ... ) forms*)\n"
 const char doc57[] PROGMEM = "(cons item item)\n"
 "If the second argument is a list, cons returns a new list with item added to the front of the list.\n"
 "If the second argument isn't a list cons returns a dotted pair.";
+const char doc92[] PROGMEM = "(append list*)\n"
+"Joins its arguments, which should be lists, into a single list.";
 const char doc14[] PROGMEM = "(defun name (parameters) form*)\n"
 "Defines a function.";
 const char doc15[] PROGMEM = "(defvar variable form)\n"
@@ -5983,8 +5984,6 @@ const char doc90[] PROGMEM = "(apply function list)\n"
 "Returns the result of evaluating function, with the list of arguments specified by the second parameter.";
 const char doc91[] PROGMEM = "(funcall function argument*)\n"
 "Evaluates function with the specified arguments.";
-const char doc92[] PROGMEM = "(append list*)\n"
-"Joins its arguments, which should be lists, into a single list.";
 const char doc93[] PROGMEM = "(mapc function list1 [list]*)\n"
 "Applies the function to each element in one or more lists, ignoring the results.\n"
 "It returns the first list argument.";
