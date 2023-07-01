@@ -15,7 +15,7 @@ Patches:
 * Added: Lisp `:keywords` that auto-quote themselves
 * Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
 * Added: Lisp `(throw)` and `(catch)`
-* Added: ***EXPERIMENTAL, BUGGY, AND PROBABLY INCORRECT*** quasiquote/unquote/unquote-splicing
+* Added: quasiquote/unquote/unquote-splicing
 * Added: Auto-run contents of `main.lisp` (on microSD card) at startup
 * Modified: SD-card functions now include filename in error messages
 * Fixed: special forms don't need to call `checkargs()` because it is automatically called
