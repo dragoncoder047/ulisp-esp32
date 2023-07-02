@@ -182,7 +182,7 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+CLOSURE, PSTAR, QUOTE, BACKQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -5491,7 +5491,7 @@ object* fn_throw (object* args, object* env) {
     return NULL;
 }
 
-// QUASIQUOTE support
+// BACKQUOTE support
 // see https://github.com/kanaka/mal/blob/master/process/guide.md#step-7-quoting
 // and https://github.com/kanaka/mal/issues/103#issuecomment-159047401
 
@@ -5503,14 +5503,14 @@ object* reverse (object* what) {
     return result;
 }
 
-object* process_quasiquote (object* arg, size_t level = 0) {
+object* process_backquote (object* arg, size_t level = 0) {
     // "If ast is a map or a symbol, return a list containing: the "quote" symbol, then ast."
     if (arg == NULL || atom(arg)) return quoteit(QUOTE, arg);
     // "If ast is a list starting with the "unquote" symbol, return its second element."
     if (listp(arg) && symbolp(first(arg))) {
         switch (builtin(first(arg)->name)) {
-            case QUASIQUOTE: return process_quasiquote(second(arg), level + 1);
-            case UNQUOTE: return level == 0 ? second(arg) : process_quasiquote(second(arg), level - 1);
+            case BACKQUOTE: return process_backquote(second(arg), level + 1);
+            case UNQUOTE: return level == 0 ? second(arg) : process_backquote(second(arg), level - 1);
             default: break;
         }
     }
@@ -5525,13 +5525,13 @@ object* process_quasiquote (object* arg, size_t level = 0) {
         // the second element of elt, then the previous result."
         if (listp(element) && symbolp(first(element)) && builtin(first(element)->name) == UNQUOTE_SPLICING) {
             object* x = second(element);
-            if (level > 0) x = process_quasiquote(x, level - 1);
+            if (level > 0) x = process_backquote(x, level - 1);
             result = cons(bsymbol(APPEND), cons(x, cons(result, nil)));
         }
         // "Else replace the current result with a list containing:
         // the "cons" symbol, the result of calling quasiquote with
         // elt as argument, then the previous result."
-        else result = cons(bsymbol(CONS), cons(process_quasiquote(element, level), cons(result, nil)));
+        else result = cons(bsymbol(CONS), cons(process_backquote(element, level), cons(result, nil)));
     }
     return result;
 }
@@ -5540,15 +5540,15 @@ object* process_quasiquote (object* arg, size_t level = 0) {
 // but evaluates the result in the current environment before returning it, either by
 // recursively calling EVAL with the result and env, or by assigning ast with the result
 // and continuing execution at the top of the loop (TCO)."
-object* tf_quasiquote (object* args, object* env) {
-    object* result = process_quasiquote(first(args));
+object* tf_backquote (object* args, object* env) {
+    object* result = process_backquote(first(args));
     // Tail call
     return result;
 }
 
 object* qq_invalid (object* args, object* env) {
     (void)args, (void)env;
-    error2(PSTR("not valid outside quasiquote"));
+    error2(PSTR("not valid outside backquote"));
     // unreachable
     return NULL;
 }
@@ -5570,7 +5570,7 @@ const char string10[] PROGMEM = "let*";
 const char string11[] PROGMEM = "closure";
 const char string12[] PROGMEM = "*pc*";
 const char string13[] PROGMEM = "quote";
-const char stringquasiquote[] PROGMEM = "quasiquote";
+const char stringbackquote[] PROGMEM = "backquote";
 const char stringunquote[] PROGMEM = "unquote";
 const char stringuqsplicing[] PROGMEM = "unquote-splicing";
 const char string57[] PROGMEM = "cons";
@@ -6337,7 +6337,7 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string11, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), NULL },
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringquasiquote, tf_quasiquote, MINMAX(TAIL_FORMS, 1, 1), NULL },
+    { stringbackquote, tf_backquote, MINMAX(TAIL_FORMS, 1, 1), NULL },
     { stringunquote, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { stringuqsplicing, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
     { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
@@ -7303,7 +7303,7 @@ object* readrest (gfun_t gfun) {
     while (item != (object*)CLOSE_PAREN) {
         if (item == (object*)OPEN_PAREN) item = readrest(gfun);
         else if (item == (object*)SINGLE_QUOTE) item = quoteit(QUOTE, read(gfun));
-        else if (item == (object*)BACKQUOTE) item = quoteit(QUASIQUOTE, read(gfun));
+        else if (item == (object*)BACKQUOTE) item = quoteit(BACKQUOTE, read(gfun));
         else if (item == (object*)COMMA) item = quoteit(UNQUOTE, read(gfun));
         else if (item == (object*)COMMA_AT) item = quoteit(UNQUOTE_SPLICING, read(gfun));
         else if (item == (object*)PERIOD) {
@@ -7330,7 +7330,7 @@ object* read (gfun_t gfun) {
     if (item == (object*)OPEN_PAREN) return readrest(gfun);
     if (item == (object*)PERIOD) return read(gfun);
     if (item == (object*)SINGLE_QUOTE) return quoteit(QUOTE, read(gfun));
-    if (item == (object*)BACKQUOTE) return quoteit(QUASIQUOTE, read(gfun));
+    if (item == (object*)BACKQUOTE) return quoteit(BACKQUOTE, read(gfun));
     if (item == (object*)COMMA) return quoteit(UNQUOTE, read(gfun));
     if (item == (object*)COMMA_AT) return quoteit(UNQUOTE_SPLICING, read(gfun));
     return item;
