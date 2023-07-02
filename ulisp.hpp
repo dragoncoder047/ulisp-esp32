@@ -5493,6 +5493,7 @@ object* fn_throw (object* args, object* env) {
 
 // QUASIQUOTE support
 // see https://github.com/kanaka/mal/blob/master/process/guide.md#step-7-quoting
+// and https://github.com/kanaka/mal/issues/103#issuecomment-159047401
 
 object* reverse (object* what) {
     object* result = NULL;
@@ -5502,11 +5503,17 @@ object* reverse (object* what) {
     return result;
 }
 
-object* process_quasiquote (object* arg) {
+object* process_quasiquote (object* arg, size_t level = 0) {
     // "If ast is a map or a symbol, return a list containing: the "quote" symbol, then ast."
     if (arg == NULL || atom(arg)) return quoteit(QUOTE, arg);
     // "If ast is a list starting with the "unquote" symbol, return its second element."
-    if (listp(arg) && symbolp(first(arg)) && builtin(first(arg)->name) == UNQUOTE) return second(arg);
+    if (listp(arg) && symbolp(first(arg))) {
+        switch (builtin(first(arg)->name)) {
+            case QUASIQUOTE: return process_quasiquote(second(arg), level + 1);
+            case UNQUOTE: return level == 0 ? second(arg) : process_quasiquote(second(arg), level - 1);
+            default: break;
+        }
+    }
     // "If ast is a list failing previous test, the result will be a list populated by the following process."
     // "The result is initially an empty list. Iterate over each element elt of ast in reverse order:"
     object* result = NULL;
@@ -5516,12 +5523,15 @@ object* process_quasiquote (object* arg) {
         // "If elt is a list starting with the "splice-unquote" symbol,
         // replace the current result with a list containing: the "concat" symbol,
         // the second element of elt, then the previous result."
-        if (listp(element) && symbolp(first(element)) && builtin(first(element)->name) == UNQUOTE_SPLICING)
-            result = cons(bsymbol(APPEND), cons(second(element), cons(result, nil)));
+        if (listp(element) && symbolp(first(element)) && builtin(first(element)->name) == UNQUOTE_SPLICING) {
+            object* x = second(element);
+            if (level > 0) x = process_quasiquote(x, level - 1);
+            result = cons(bsymbol(APPEND), cons(x, cons(result, nil)));
+        }
         // "Else replace the current result with a list containing:
         // the "cons" symbol, the result of calling quasiquote with
         // elt as argument, then the previous result."
-        else result = cons(bsymbol(CONS), cons(process_quasiquote(element), cons(result, nil)));
+        else result = cons(bsymbol(CONS), cons(process_quasiquote(element, level), cons(result, nil)));
     }
     return result;
 }
