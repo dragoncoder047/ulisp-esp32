@@ -2049,13 +2049,16 @@ uint8_t basewidth (object* obj, uint8_t base) {
     return PrintCount;
 }
 
-bool quoted (object* obj) {
-    return (consp(obj) && car(obj) != NULL && car(obj)->name == sym(QUOTE) && consp(cdr(obj)) && cddr(obj) == NULL);
+bool quoted (object* obj, builtin_t which) {
+    return (consp(obj) && car(obj) != NULL && car(obj)->name == sym(which) && consp(cdr(obj)) && cddr(obj) == NULL);
 }
 
 int subwidth (object* obj, int w) {
     if (atom(obj)) return w - atomwidth(obj);
-    if (quoted(obj)) obj = car(cdr(obj));
+    if (quoted(obj, QUOTE) || quoted(obj, BACKQUOTE) || quoted(obj, UNQUOTE) || quoted(obj, UNQUOTE_SPLICING)) {
+        if (builtin(car(obj)->name) == UNQUOTE_SPLICING) w--; // unquote splicing is 2 chars
+        obj = car(cdr(obj));
+    }
     return subwidthlist(obj, w - 1);
 }
 
@@ -2076,7 +2079,10 @@ void superprint (object* form, int lm, pfun_t pfun) {
         if (symbolp(form) && form->name == sym(NOTHING)) printsymbol(form, pfun);
         else printobject(form, pfun);
     }
-    else if (quoted(form)) { pfun('\''); superprint(car(cdr(form)), lm + 1, pfun); }
+    else if (quoted(form, QUOTE)) { pfun('\''); superprint(car(cdr(form)), lm + 1, pfun); }
+    else if (quoted(form, BACKQUOTE)) { pfun('`'); superprint(car(cdr(form)), lm + 1, pfun); }
+    else if (quoted(form, UNQUOTE)) { pfun(','); superprint(car(cdr(form)), lm + 1, pfun); }
+    else if (quoted(form, UNQUOTE_SPLICING)) { pfun(','); pfun('@'); superprint(car(cdr(form)), lm + 2, pfun); }
     else if (subwidth(form, ppwidth - lm) >= 0) supersub(form, lm + PPINDENT, 0, pfun);
     else supersub(form, lm + PPINDENT, 1, pfun);
 }
