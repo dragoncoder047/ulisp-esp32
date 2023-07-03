@@ -181,8 +181,8 @@ typedef struct {
 typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
-enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, BACKQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, MACRO, LET, LETSTAR,
+CLOSURE, PSTAR, QUOTE, BACKQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, DEFMACRO, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -2176,6 +2176,21 @@ object* sp_defvar (object* args, object* env) {
     object* val = NULL;
     args = cdr(args);
     if (args != NULL) { setflag(NOESC); val = eval(first(args), env); clrflag(NOESC); }
+    object* pair = value(var->name, GlobalEnv);
+    if (pair != NULL) cdr(pair) = val;
+    else push(cons(var, val), GlobalEnv);
+    return var;
+}
+
+/*
+    (defmacro name (parameters) form*)
+    Defines a syntactic macro.
+*/
+object* sp_defmacro (object* args, object* env) {
+    (void) env;
+    object* var = first(args);
+    if (!symbolp(var)) error(notasymbol, var);
+    object* val = cons(bsymbol(MACRO), cdr(args));
     object* pair = value(var->name, GlobalEnv);
     if (pair != NULL) cdr(pair) = val;
     else push(cons(var, val), GlobalEnv);
@@ -5552,11 +5567,42 @@ object* tf_backquote (object* args, object* env) {
     return result;
 }
 
-object* qq_invalid (object* args, object* env) {
+object* bq_invalid (object* args, object* env) {
     (void)args, (void)env;
     error2(PSTR("not valid outside backquote"));
     // unreachable
     return NULL;
+}
+
+////////////////////////////////////////////////////////////////////////
+// MACRO support
+
+bool is_macro_call (object* form) {
+    if (!consp(form)) return false;
+    object* lambda = first(form);
+    if (!consp(lambda)) return false;
+    return isbuiltin(first(lambda), MACRO);
+}
+
+object* macroexpand1 (object* form, object* env, bool* done) {
+    if (symbolp(car(form))) form = cons(eval(car(form), env), cdr(form)); // Look up variable but DON'T mutate form
+    if (!is_macro_call(form)) {
+        *done = true;
+        return form;
+    }
+    form = closure(0, sym(NIL), car(form), cdr(form), &env);
+    return eval(form, env);
+}
+
+object* fn_macroexpand1 (object* form, object* env) {
+    bool dummy;
+    return macroexpand1(form, env, &dummy);
+}
+
+object* macroexpand (object* form, object* env) {
+    bool done = false;
+    while (!done) form = macroexpand1(form, env, &done);
+    return form;
 }
 
 ///////////////////////////////////////////////////////////
@@ -5571,6 +5617,7 @@ const char string5[] PROGMEM = ":element-type";
 const char string6[] PROGMEM = "bit";
 const char string7[] PROGMEM = "&rest";
 const char string8[] PROGMEM = "lambda";
+const char stringmacro[] PROGMEM = "macro";
 const char string9[] PROGMEM = "let";
 const char string10[] PROGMEM = "let*";
 const char string11[] PROGMEM = "closure";
@@ -5583,6 +5630,7 @@ const char string57[] PROGMEM = "cons";
 const char string92[] PROGMEM = "append";
 const char string14[] PROGMEM = "defun";
 const char string15[] PROGMEM = "defvar";
+const char stringdefmacro[] PROGMEM = "defmacro";
 const char string16[] PROGMEM = "car";
 const char string17[] PROGMEM = "first";
 const char string18[] PROGMEM = "cdr";
@@ -5801,6 +5849,8 @@ const char string232[] PROGMEM = ":output";
 
 const char stringcatch[] PROGMEM = "catch";
 const char stringthrow[] PROGMEM = "throw";
+const char stringmacroexpand1[] PROGMEM = "macroexpand-1";
+const char stringmacroexpand[] PROGMEM = "macroexpand";
 
 // Documentation strings
 const char doc0[] PROGMEM = "nil\n"
@@ -5818,11 +5868,22 @@ const char doc7[] PROGMEM = "&rest\n"
 const char doc8[] PROGMEM = "(lambda (parameter*) form*)\n"
 "Creates an unnamed function with parameters. The body is evaluated with the parameters as local variables\n"
 "whose initial values are defined by the values of the forms after the lambda form.";
+const char docmacro[] PROGMEM = "(macro (parameter*) form*)\n"
+"Creates an unnamed lambda-macro with parameters. The body is evaluated with the parameters as local variables\n"
+"whose initial values are defined by the values of the forms after the macro form;\n"
+"the resultant Lisp code returned is then evaluated again, this time in the scope of where the macro was called.";
 const char doc9[] PROGMEM = "(let ((var value) ... ) forms*)\n"
 "Declares local variables with values, and evaluates the forms with those local variables.";
 const char doc10[] PROGMEM = "(let* ((var value) ... ) forms*)\n"
 "Declares local variables with values, and evaluates the forms with those local variables.\n"
 "Each declaration can refer to local variables that have been defined earlier in the let*.";
+const char docbackquote[] PROGMEM = "(backquote form) or `form\n"
+"Expands the unquotes present in the form as a syntactic template. Most commonly used in macros.";
+const char docunquote[] PROGMEM = "(unquote form) or ,form\n"
+"Marks a form to be evaluated and the value inserted when (backquote) expands the template.";
+const char docunquotesplicing[] PROGMEM = "(unquote-splicing form) or ,@form\n"
+"Marks a form to be evaluated and the value spliced in when (backquote) expands the template.\n"
+"If the value returned when evaluating form is not a proper list (backquote) will bork very badly.";
 const char doc57[] PROGMEM = "(cons item item)\n"
 "If the second argument is a list, cons returns a new list with item added to the front of the list.\n"
 "If the second argument isn't a list cons returns a dotted pair.";
@@ -5832,6 +5893,8 @@ const char doc14[] PROGMEM = "(defun name (parameters) form*)\n"
 "Defines a function.";
 const char doc15[] PROGMEM = "(defvar variable form)\n"
 "Defines a global variable.";
+const char docdefmacro[] PROGMEM = "(defmacro name (parameters) form*)\n"
+"Defines a syntactic macro.";
 const char doc16[] PROGMEM = "(car list)\n"
 "Returns the first item in a list.";
 const char doc18[] PROGMEM = "(cdr list)\n"
@@ -6327,6 +6390,12 @@ const char docthrow[] PROGMEM = "(throw 'tag [value])\n"
 "It is an error to call (throw) without first entering a (catch) with\n"
 "the same tag.";
 
+const char docmacroexpand1[] PROGMEM = "(macroexpand-1 'form)\n"
+"If the form represents a call to a macro, expands the macro once and returns the expanded code.";
+const char docmacroexpand[] PROGMEM = "(macroexpand 'form)\n"
+"Repeatedly applies (macroexpand) until the form no longer represents a call to a macro,\n"
+"then returns the new form.";
+
 // Built-in symbol lookup table
 const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string0, NULL, MINMAX(OTHER_FORMS, 0, 0), doc0 },
@@ -6338,18 +6407,20 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string6, NULL, MINMAX(OTHER_FORMS, 0, 0), NULL },
     { string7, NULL, MINMAX(OTHER_FORMS, 0, 0), doc7 },
     { string8, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), doc8 },
+    { stringmacro, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), docmacro },
     { string9, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), doc9 },
     { string10, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), doc10 },
     { string11, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), NULL },
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringbackquote, tf_backquote, MINMAX(TAIL_FORMS, 1, 1), NULL },
-    { stringunquote, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringuqsplicing, qq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
+    { stringbackquote, tf_backquote, MINMAX(TAIL_FORMS, 1, 1), docbackquote },
+    { stringunquote, bq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), docunquote },
+    { stringuqsplicing, bq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), docunquotesplicing },
     { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
     { string92, fn_append, MINMAX(FUNCTIONS, 0, UNLIMITED), doc92 },
     { string14, sp_defun, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc14 },
     { string15, sp_defvar, MINMAX(SPECIAL_FORMS, 1, 3), doc15 },
+    { stringdefmacro, sp_defmacro, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), docdefmacro },
     { string16, fn_car, MINMAX(FUNCTIONS, 1, 1), doc16 },
     { string17, fn_car, MINMAX(FUNCTIONS, 1, 1), NULL },
     { string18, fn_cdr, MINMAX(FUNCTIONS, 1, 1), doc18 },
@@ -6565,6 +6636,8 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string232, (fn_ptr_type)OUTPUT, PINMODE, NULL },
     { stringcatch, sp_catch, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doccatch },
     { stringthrow, fn_throw, MINMAX(FUNCTIONS, 1, 2), docthrow },
+    { stringmacroexpand1, fn_macroexpand1, MINMAX(FUNCTIONS, 1, 1), docmacroexpand1 },
+    { stringmacroexpand, macroexpand, MINMAX(FUNCTIONS, 1, 1), docmacroexpand },
 };
 
 // Metatable cross-reference functions
@@ -6708,6 +6781,8 @@ object* eval (object* form, object* env) {
         Context = NIL;
         error(PSTR("undefined"), form);
     }
+    // Expand macros
+    form = macroexpand(form);
 
     // It's a list
     object* function = car(form);
@@ -6744,6 +6819,7 @@ object* eval (object* form, object* env) {
             goto EVAL;
         }
 
+        // MACRO does not do closures.
         if (name == LAMBDA) {
             if (env == NULL) return form;
             object* envcopy = NULL;

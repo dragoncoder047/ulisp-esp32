@@ -16,6 +16,7 @@ Patches:
 * Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
 * Added: Lisp `(throw)` and `(catch)`
 * Added: backquote/unquote/unquote-splicing
+* Added: **EXPERIMENTAL** macros/defmacro/macroexpand *no support for destructuring lambda lists yet*
 * Added: Auto-run contents of `main.lisp` (on microSD card) at startup
 * Modified: SD-card functions now include filename in error messages
 * Fixed: special forms don't need to call `checkargs()` because it is automatically called
