@@ -261,6 +261,7 @@ void repl (object*);
 void prin1object (object*, pfun_t);
 void plispstr (symbol_t, pfun_t);
 void testescape ();
+bool is_macro_call (object*);
 
 inline uint32_t twist (uint32_t x) {
     return (x<<2) | ((x & 0xC0000000)>>30);
@@ -1716,6 +1717,7 @@ object* apply (object* function, object* args, object* env) {
     in-place operation such as setf. bit is used to indicate the bit position in a bit array
 */
 object** place (object* args, object* env, int *bit) {
+    PLACE:
     *bit = -1;
     if (atom(args)) return &cdr(findvalue(args, env));
     object* function = first(args);
@@ -1747,6 +1749,10 @@ object** place (object* args, object* env, int *bit) {
             if (!arrayp(array)) error(PSTR("first argument is not an array"), array);
             return getarray(array, cddr(args), env, bit);
         }
+    }
+    else if (is_macro_call(function)) {
+        function = eval(function, env);
+        goto PLACE;
     }
     error2(PSTR("illegal place"));
     return nil;
