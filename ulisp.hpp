@@ -5601,7 +5601,12 @@ object* fn_macroexpand1 (object* form, object* env) {
 
 object* macroexpand (object* form, object* env) {
     bool done = false;
-    while (!done) form = macroexpand1(form, env, &done);
+    int limit = 10000;
+    while (!done) {
+        form = macroexpand1(form, env, &done);
+        limit--;
+        if (limit == 0 && !done) error2(PSTR("too many macros"));
+    }
     return form;
 }
 
