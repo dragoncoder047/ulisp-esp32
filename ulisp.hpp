@@ -124,7 +124,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 
 #define TRACEMAX 3 // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
-enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD, BACKQUOTE, COMMA, COMMA_AT };
+enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD, BACKTICK, COMMA, COMMA_AT };
 enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
 
 // Stream names used by printobject
@@ -7263,7 +7263,7 @@ object* nextitem (gfun_t gfun) {
     if (ch == ')') return (object*)CLOSE_PAREN;
     if (ch == '(') return (object*)OPEN_PAREN;
     if (ch == '\'') return (object*)SINGLE_QUOTE;
-    if (ch == '`') return (object*)BACKQUOTE;
+    if (ch == '`') return (object*)BACKTICK;
     if (ch == '@') return (object*)COMMA_AT; // maintain compatibility with old Dave Astels code
     if (ch == ',') {
         ch = gfun();
@@ -7396,7 +7396,7 @@ object* readrest (gfun_t gfun) {
     while (item != (object*)CLOSE_PAREN) {
         if (item == (object*)OPEN_PAREN) item = readrest(gfun);
         else if (item == (object*)SINGLE_QUOTE) item = quoteit(QUOTE, read(gfun));
-        else if (item == (object*)BACKQUOTE) item = quoteit(BACKQUOTE, read(gfun));
+        else if (item == (object*)BACKTICK) item = quoteit(BACKQUOTE, read(gfun));
         else if (item == (object*)COMMA) item = quoteit(UNQUOTE, read(gfun));
         else if (item == (object*)COMMA_AT) item = quoteit(UNQUOTE_SPLICING, read(gfun));
         else if (item == (object*)PERIOD) {
@@ -7423,7 +7423,7 @@ object* read (gfun_t gfun) {
     if (item == (object*)OPEN_PAREN) return readrest(gfun);
     if (item == (object*)PERIOD) return read(gfun);
     if (item == (object*)SINGLE_QUOTE) return quoteit(QUOTE, read(gfun));
-    if (item == (object*)BACKQUOTE) return quoteit(BACKQUOTE, read(gfun));
+    if (item == (object*)BACKTICK) return quoteit(BACKQUOTE, read(gfun));
     if (item == (object*)COMMA) return quoteit(UNQUOTE, read(gfun));
     if (item == (object*)COMMA_AT) return quoteit(UNQUOTE_SPLICING, read(gfun));
     return item;
