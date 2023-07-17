@@ -261,7 +261,7 @@ void repl (object*);
 void prin1object (object*, pfun_t);
 void plispstr (symbol_t, pfun_t);
 void testescape ();
-bool is_macro_call (object*);
+bool is_macro_call (object*, object*);
 
 inline uint32_t twist (uint32_t x) {
     return (x<<2) | ((x & 0xC0000000)>>30);
@@ -1750,7 +1750,7 @@ object** place (object* args, object* env, int *bit) {
             return getarray(array, cddr(args), env, bit);
         }
     }
-    else if (is_macro_call(function)) {
+    else if (is_macro_call(function, env)) {
         function = eval(function, env);
         goto PLACE;
     }
@@ -5583,7 +5583,14 @@ object* bq_invalid (object* args, object* env) {
 ////////////////////////////////////////////////////////////////////////
 // MACRO support
 
-bool is_macro_call (object* form) {
+bool is_macro_call (object* form, object* env) {
+    CHECK:
+    if (symbolp(form)) {
+        object* pair = findpair(form, env);
+        if (pair == NULL) return false;
+        form = cdr(pair);
+        goto CHECK;
+    }
     if (!consp(form)) return false;
     object* lambda = first(form);
     if (!consp(lambda)) return false;
@@ -5591,8 +5598,7 @@ bool is_macro_call (object* form) {
 }
 
 object* macroexpand1 (object* form, object* env, bool* done) {
-    if (symbolp(car(form))) form = cons(eval(car(form), env), cdr(form)); // Look up variable but DON'T mutate form
-    if (!is_macro_call(form)) {
+    if (!is_macro_call(form, env)) {
         *done = true;
         return form;
     }
@@ -6793,7 +6799,7 @@ object* eval (object* form, object* env) {
         error(PSTR("undefined"), form);
     }
     // Expand macros
-    form = macroexpand(form);
+    form = macroexpand(form, env);
 
     // It's a list
     object* function = car(form);
