@@ -5585,10 +5585,11 @@ object* bq_invalid (object* args, object* env) {
 
 bool is_macro_call (object* form, object* env) {
     CHECK:
-    if (symbolp(form)) {
-        object* pair = findpair(form, env);
+    if (form == nil) return false;
+    if (symbolp(car(form))) {
+        object* pair = findpair(car(form), env);
         if (pair == NULL) return false;
-        form = cdr(pair);
+        form = cons(cdr(pair), cdr(form));
         goto CHECK;
     }
     if (!consp(form)) return false;
@@ -5602,7 +5603,19 @@ object* macroexpand1 (object* form, object* env, bool* done) {
         *done = true;
         return form;
     }
-    form = closure(0, sym(NIL), car(form), cdr(form), &env);
+    Serial.print("***in macroexpand1() form=");
+    printobject(form, pserial);
+    Serial.println();
+    symbol_t name = sym(NIL);
+    if (symbolp(car(form))) {
+        Serial.println("is a named macro, name=");
+        printsymbol(car(form), pserial);
+        do form = cons(cdr(findvalue(car(form), env)), cdr(form)); while (symbolp(car(form)));
+        Serial.print(" new value=");
+        printobject(car(form), pserial);
+        Serial.println();
+    }
+    form = closure(0, name, car(form), cdr(form), &env);
     return eval(form, env);
 }
 
@@ -5617,7 +5630,7 @@ object* macroexpand (object* form, object* env) {
     while (!done) {
         form = macroexpand1(form, env, &done);
         limit--;
-        if (limit == 0 && !done) error2(PSTR("too many macros"));
+        if (limit == 0 && !done) error2(PSTR("too many nested macros"));
     }
     return form;
 }
