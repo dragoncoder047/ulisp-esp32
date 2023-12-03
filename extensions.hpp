@@ -44,7 +44,7 @@ object* fn_gensym (object* args, object* env) {
         snprintf(buffer, sizeof(buffer), "%s%u", prefix, counter);
         result = buftosymbol(buffer);
         counter++;
-    } while (boundp(result, env) || boundp(result, GlobalEnv));
+    } while (boundp(result, env));
     return result;
 }
 
