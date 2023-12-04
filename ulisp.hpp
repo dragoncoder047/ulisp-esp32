@@ -65,6 +65,8 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define LED_BUILTIN 13
 #endif
 
+#define MAX_STACK 1000
+
 
 // C Macros
 
@@ -212,6 +214,8 @@ char LastPrint = 0;
 unsigned int I2Ccount;
 unsigned int TraceFn[TRACEMAX];
 unsigned int TraceDepth[TRACEMAX];
+
+void* StackBottom;
 
 // Flags
 enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS, INCATCH };
@@ -5603,12 +5607,9 @@ object* macroexpand1 (object* form, object* env, bool* done) {
         *done = true;
         return form;
     }
-    symbol_t name = sym(NIL);
-    if (symbolp(car(form))) {
-        do form = cons(cdr(findvalue(car(form), env)), cdr(form)); while (symbolp(car(form)));
-    }
+    while (symbolp(car(form))) form = cons(cdr(findvalue(car(form), env)), cdr(form));
     protect(form);
-    form = closure(0, name, car(form), cdr(form), &env);
+    form = closure(0, sym(NIL), car(form), cdr(form), &env);
     object* result = eval(form, env);
     unprotect();
     return result;
@@ -5620,9 +5621,6 @@ object* fn_macroexpand1 (object* args, object* env) {
 }
 
 object* macroexpand (object* form, object* env) {
-    static object* prev_form = NULL;
-    if (equal(prev_form, form)) error2(PSTR("infinitely recursive macro detected"));
-    prev_form = form;
     bool done = false;
     protect(form);
     while (!done) {
@@ -6797,6 +6795,8 @@ object* eval (object* form, object* env) {
     // Escape
     if (tstflag(ESCAPE)) { clrflag(ESCAPE); error2(PSTR("escape!"));}
     if (!tstflag(NOESC)) testescape();
+    // Stack overflow check
+    if (abs(static_cast<int*>(StackBottom) - &TC) > MAX_STACK) error(PSTR("C stack overflow"), form);
 
     if (form == NULL) return nil;
 
@@ -7474,6 +7474,8 @@ void initgfx () {
 }
 
 void ulispinit () {
+    int foo = 0;
+    StackBottom = &foo;
     initworkspace();
     inittables();
     initenv();
