@@ -5603,36 +5603,38 @@ object* macroexpand1 (object* form, object* env, bool* done) {
         *done = true;
         return form;
     }
-    Serial.print("***in macroexpand1() form=");
-    printobject(form, pserial);
-    Serial.println();
     symbol_t name = sym(NIL);
     if (symbolp(car(form))) {
-        Serial.println("is a named macro, name=");
-        printsymbol(car(form), pserial);
         do form = cons(cdr(findvalue(car(form), env)), cdr(form)); while (symbolp(car(form)));
-        Serial.print(" new value=");
-        printobject(car(form), pserial);
-        Serial.println();
     }
+    protect(form);
     form = closure(0, name, car(form), cdr(form), &env);
-    return eval(form, env);
+    object* result = eval(form, env);
+    unprotect();
+    return result;
 }
 
-object* fn_macroexpand1 (object* form, object* env) {
+object* fn_macroexpand1 (object* args, object* env) {
     bool dummy;
-    return macroexpand1(form, env, &dummy);
+    return macroexpand1(first(args), env, &dummy);
 }
 
 object* macroexpand (object* form, object* env) {
+    static object* prev_form = NULL;
+    if (equal(prev_form, form)) error2(PSTR("infinitely recursive macro detected"));
+    prev_form = form;
     bool done = false;
-    int limit = 10000;
+    protect(form);
     while (!done) {
         form = macroexpand1(form, env, &done);
-        limit--;
-        if (limit == 0 && !done) error2(PSTR("too many nested macros"));
+        car(GCStack) = form;
     }
+    unprotect();
     return form;
+}
+
+object* fn_macroexpand (object* args, object* env) {
+    return macroexpand(first(args), env);
 }
 
 ///////////////////////////////////////////////////////////
@@ -6423,7 +6425,7 @@ const char docthrow[] PROGMEM = "(throw 'tag [value])\n"
 const char docmacroexpand1[] PROGMEM = "(macroexpand-1 'form)\n"
 "If the form represents a call to a macro, expands the macro once and returns the expanded code.";
 const char docmacroexpand[] PROGMEM = "(macroexpand 'form)\n"
-"Repeatedly applies (macroexpand) until the form no longer represents a call to a macro,\n"
+"Repeatedly applies (macroexpand-1) until the form no longer represents a call to a macro,\n"
 "then returns the new form.";
 
 // Built-in symbol lookup table
@@ -6667,7 +6669,7 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { stringcatch, sp_catch, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doccatch },
     { stringthrow, fn_throw, MINMAX(FUNCTIONS, 1, 2), docthrow },
     { stringmacroexpand1, fn_macroexpand1, MINMAX(FUNCTIONS, 1, 1), docmacroexpand1 },
-    { stringmacroexpand, macroexpand, MINMAX(FUNCTIONS, 1, 1), docmacroexpand },
+    { stringmacroexpand, fn_macroexpand, MINMAX(FUNCTIONS, 1, 1), docmacroexpand },
 };
 
 // Metatable cross-reference functions
