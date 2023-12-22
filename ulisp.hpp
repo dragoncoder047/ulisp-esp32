@@ -1151,7 +1151,7 @@ object** arrayref (object* array, int index, int size) {
     getarray - gets a pointer to an element in a multi-dimensional array, given a list of the subscripts subs
     If the first subscript is negative it's a bit array and bit is set to the bit number
 */
-object** getarray (object* array, object* subs, object* env, int *bit) {
+object** getarray (object* array, object* subs, object* env, int* bit) {
     int index = 0, size = 1, s;
     *bit = -1;
     bool bitp = false;
@@ -1720,7 +1720,7 @@ object* apply (object* function, object* args, object* env) {
     place - returns a pointer to an object referenced in the second argument of an
     in-place operation such as setf. bit is used to indicate the bit position in a bit array
 */
-object** place (object* args, object* env, int *bit) {
+object** place (object* args, object* env, int* bit) {
     PLACE:
     *bit = -1;
     if (atom(args)) return &cdr(findvalue(args, env));
@@ -1754,7 +1754,7 @@ object** place (object* args, object* env, int *bit) {
             return getarray(array, cddr(args), env, bit);
         }
     }
-    else if (is_macro_call(function, env)) {
+    else if (is_macro_call(args, env)) {
         function = eval(function, env);
         goto PLACE;
     }
@@ -5588,8 +5588,8 @@ object* bq_invalid (object* args, object* env) {
 // MACRO support
 
 bool is_macro_call (object* form, object* env) {
-    CHECK:
     if (form == nil) return false;
+    CHECK:
     if (symbolp(car(form))) {
         object* pair = findpair(car(form), env);
         if (pair == NULL) return false;
