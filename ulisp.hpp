@@ -65,7 +65,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define LED_BUILTIN 13
 #endif
 
-#define MAX_STACK 1000
+#define MAX_STACK 4000
 
 
 // C Macros
@@ -279,15 +279,15 @@ inline uint32_t untwist (uint32_t x) {
 
 /*
     errorsub - used by all the error routines.
-    Prints: "Error: 'fname' string", where fname is the name of the Lisp function in which the error occurred.
+    Prints: "Error in fname: string", where fname is the name of the Lisp function in which the error occurred.
 */
 void errorsub (symbol_t fname, PGM_P string) {
-    pfl(pserial); pfstring(PSTR("Error: "), pserial);
+    pfl(pserial); pfstring(PSTR("Error"), pserial);
     if (fname != sym(NIL)) {
-        pserial('\'');
+        pfstring(PSTR(" in "), pserial);
         psymbol(fname, pserial);
-        pserial('\''); pserial(' ');
     }
+    pserial(':'); pserial(' ');
     pfstring(string, pserial);
 }
 
@@ -1951,7 +1951,7 @@ inline void spiwrite (char c) { SPI.transfer(c); }
 inline void serial1write (char c) { Serial1.write(c); }
 inline void WiFiwrite (char c) { client.write(c); }
 #if defined(sdcardsupport)
-inline void SDwrite (char c) { SDpfile.write(c); }
+inline void SDwrite (char c) { int w = SDpfile.write(c); if (w != 1) { Context = NIL; error2(PSTR("failed to write to file")); } }
 #endif
 #if defined(gfxsupport)
 inline void gfxwrite (char c) { tft.write(c); }
@@ -2600,7 +2600,8 @@ object* sp_withserial (object* args, object* env) {
 object* sp_withi2c (object* args, object* env) {
     object* params = checkarguments(args, 2, 4);
     object* var = first(params);
-    int address = checkinteger(eval(second(params), env));
+    object* addr = eval(second(params), env);
+    int address = checkinteger(addr);
     params = cddr(params);
     if (address == 0 && params != NULL) params = cdr(params); // Ignore port
     int read = 0; // Write
