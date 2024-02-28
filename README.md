@@ -14,12 +14,15 @@ Patches:
 * Deleted: line-editor support
 * Added: Lisp `:keywords` that auto-quote themselves
 * Added: Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*
-* Added: Lisp `(throw)` and `(catch)`
-* Added: backquote/unquote/unquote-splicing
-* Added: **EXPERIMENTAL** macros/defmacro/macroexpand *no support for destructuring lambda lists yet*
+* Added: Lisp `(throw)` and `(catch)` (\*)
+* Added: backquote/unquote/unquote-splicing (\*)
+* Added: macros/defmacro/macroexpand *no support for destructuring lambda lists yet* (\*)
 * Added: Auto-run contents of `main.lisp` (on microSD card) at startup
 * Modified: SD-card functions now include filename in error messages
 * Fixed: special forms don't need to call `checkargs()` because it is automatically called
+
+> [!CAUTION]
+> If you are looking to use this patched bersion as a guide for adding any of the 3 starred (\*) features listed above, please use [this guide I prepared](https://dragoncoder047.github.io/pages/ulisp_howto.html) instead. There are many subtle changes in my patched version that are understandable to me, but will no doubt cause confusion for someone who is just copy-pasting my code. The aforementioned document is structured and designed to allow copy-asting into vanilla uLisp without major problems arising.
 
 Extensions (`extensions.hpp`):
 
