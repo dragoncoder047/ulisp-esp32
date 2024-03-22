@@ -22,7 +22,7 @@ Patches:
 * Fixed: special forms don't need to call `checkargs()` because it is automatically called
 
 > [!CAUTION]
-> If you are looking to use this patched bersion as a guide for adding any of the 3 starred (\*) features listed above, please use [this guide I prepared](https://dragoncoder047.github.io/pages/ulisp_howto.html) instead. There are many subtle changes in my patched version that are understandable to me, but will no doubt cause confusion for someone who is just copy-pasting my code. The aforementioned document is structured and designed to allow copy-asting into vanilla uLisp without major problems arising.
+> If you are looking to use this patched version as a guide for adding any of the 3 starred (\*) features listed above, please use [this guide I prepared](https://dragoncoder047.github.io/pages/ulisp_howto.html) instead. There are many subtle changes in my patched version that are understandable to me, but will no doubt cause confusion for someone who is just copy-pasting my code. The aforementioned document is structured and designed to allow copy-pasting into vanilla uLisp without major problems arising.
 
 Extensions (`extensions.hpp`):
 
