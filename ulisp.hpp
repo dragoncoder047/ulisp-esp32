@@ -223,6 +223,7 @@ volatile flags_t Flags = 0b00001; // PRINTREADABLY set by default
 
 // Forward references
 object* tee;
+bool builtin_keywordp (object*);
 bool keywordp (object*);
 void pfstring (PGM_P, pfun_t);
 char nthchar (object*, int);
@@ -875,7 +876,7 @@ bool builtinp (symbol_t name) {
 }
 
 int checkkeyword (object* obj) {
-    if (!keywordp(obj)) error(PSTR("argument is not a keyword"), obj);
+    if (!builtin_keywordp(obj)) error(PSTR("argument is not a keyword"), obj);
     builtin_t kname = builtin(obj->name);
     minmax_t context = getminmax(kname);
     if (context != 0 && context != (minmax_t)Context) error(invalidkey, obj);
@@ -1628,7 +1629,7 @@ object* findvalue (object* var, object* env) {
 
 // Handling closures
 
-object* closure (int tc, symbol_t name, object* function, object* args, object** env) {
+object* closure (bool tc, symbol_t name, object* function, object* args, object** env) {
     object* state = car(function);
     function = cdr(function);
     int trace = 0;
@@ -1702,12 +1703,12 @@ object* apply (object* function, object* args, object* env) {
         } else function = eval(function, env);
     }
     if (consp(function) && isbuiltin(car(function), LAMBDA)) {
-        object* result = closure(0, sym(NIL), function, args, &env);
+        object* result = closure(false, sym(NIL), function, args, &env);
         return eval(result, env);
     }
     if (consp(function) && isbuiltin(car(function), CLOSURE)) {
         function = cdr(function);
-        object* result = closure(0, sym(NIL), function, args, &env);
+        object* result = closure(false, sym(NIL), function, args, &env);
         return eval(result, env);
     }
     error(PSTR("illegal function"), function);
@@ -6773,14 +6774,24 @@ void testescape () {
 }
 
 /*
-    keywordp - check that obj is a keyword
+    builtin_keywordp - check that obj is a built-in keyword
 */
-bool keywordp (object* obj) {
+bool builtin_keywordp (object* obj) {
     if (!(symbolp(obj) && builtinp(obj->name))) return false;
     builtin_t name = builtin(obj->name);
     PGM_P s = (char*)pgm_read_ptr(&(getentry(name)->string));
     char c = pgm_read_byte(&s[0]);
-    return (c == ':');
+    return c == ':';
+}
+
+bool keywordp (object* obj) {
+    if (obj == nil) return false;
+    if (builtin_keywordp(obj)) return true;
+    symbol_t name = obj->name;
+    if ((name & 3) != 0) return false; // Packed symbols are never keywords
+    object* first_chunk = (object*)name;
+    if (!first_chunk) return false;
+    return (((first_chunk->chars) >> ((sizeof(int) - 1) * 8)) & 255) == ':';
 }
 
 // Main evaluator
@@ -6789,7 +6800,7 @@ bool keywordp (object* obj) {
     eval - the main Lisp evaluator
 */
 object* eval (object* form, object* env) {
-    int TC=0;
+    bool tailcall = false;
     EVAL:
     // Enough space?
     if (Freespace <= WORKSPACESIZE>>4) gc(form, env);
@@ -6797,14 +6808,14 @@ object* eval (object* form, object* env) {
     if (tstflag(ESCAPE)) { clrflag(ESCAPE); error2(PSTR("escape!"));}
     if (!tstflag(NOESC)) testescape();
     // Stack overflow check
-    if (abs(static_cast<int*>(StackBottom) - &TC) > MAX_STACK) error(PSTR("C stack overflow"), form);
+    if (abs(static_cast<bool*>(StackBottom) - &tailcall) > MAX_STACK) error(PSTR("C stack overflow"), form);
 
     if (form == NULL) return nil;
 
-    if (form->type >= NUMBER && form->type <= STRING) return form;
+    if (form->type >= NUMBER && form->type <= STRING) return form; // Literal
 
     if (symbolp(form)) {
-        if (nthchar(princtostring(form), 0) == ':') return form; // Keyword
+        if (keywordp(form)) return form; // Keyword
         symbol_t name = form->name;
         object* pair = value(name, env);
         if (pair != NULL) return cdr(pair);
@@ -6829,7 +6840,7 @@ object* eval (object* form, object* env) {
         builtin_t name = builtin(function->name);
 
         if ((name == LET) || (name == LETSTAR)) {
-            int TCstart = TC;
+            bool old_tailcall = tailcall;
             if (args == NULL) error2(noargument);
             object* assigns = first(args);
             if (!listp(assigns)) error(notalist, assigns);
@@ -6838,9 +6849,9 @@ object* eval (object* form, object* env) {
             protect(newenv);
             while (assigns != NULL) {
                 object* assign = car(assigns);
-                if (!consp(assign)) push(cons(assign,nil), newenv);
-                else if (cdr(assign) == NULL) push(cons(first(assign),nil), newenv);
-                else push(cons(first(assign),eval(second(assign),env)), newenv);
+                if (!consp(assign)) push(cons(assign, nil), newenv);
+                else if (cdr(assign) == NULL) push(cons(first(assign), nil), newenv);
+                else push(cons(first(assign), eval(second(assign), env)), newenv);
                 car(GCStack) = newenv;
                 if (name == LETSTAR) env = newenv;
                 assigns = cdr(assigns);
@@ -6848,7 +6859,7 @@ object* eval (object* form, object* env) {
             env = newenv;
             unprotect();
             form = tf_progn(forms,env);
-            TC = TCstart;
+            tailcall = old_tailcall;
             goto EVAL;
         }
 
@@ -6861,7 +6872,7 @@ object* eval (object* form, object* env) {
                 if (pair != NULL) push(pair, envcopy);
                 env = cdr(env);
             }
-            return cons(bsymbol(CLOSURE), cons(envcopy,args));
+            return cons(bsymbol(CLOSURE), cons(envcopy, args));
         }
         uint8_t ft = fntype(getminmax(name));
 
@@ -6875,7 +6886,7 @@ object* eval (object* form, object* env) {
             Context = name;
             checkargs(args);
             form = ((fn_ptr_type)lookupfn(name))(args, env);
-            TC = 1;
+            tailcall = true;
             goto EVAL;
         }
         if (ft == OTHER_FORMS) error(PSTR("can't be used as a function"), function);
@@ -6883,7 +6894,7 @@ object* eval (object* form, object* env) {
 
     // Evaluate the parameters - result in head
     object* fname = car(form);
-    int TCstart = TC;
+    bool old_tailcall = tailcall;
     object* head = cons(eval(fname, env), NULL);
     protect(head); // Don't GC the result list
     object* tail = head;
@@ -6891,7 +6902,7 @@ object* eval (object* form, object* env) {
     int nargs = 0;
 
     while (form != NULL){
-        object* obj = cons(eval(car(form),env),NULL);
+        object* obj = cons(eval(car(form), env), NULL);
         cdr(tail) = obj;
         tail = obj;
         form = cdr(form);
@@ -6903,7 +6914,7 @@ object* eval (object* form, object* env) {
 
     if (symbolp(function)) {
         builtin_t bname = builtin(function->name);
-        if (!builtinp(function->name)) error(PSTR("not valid here"), fname);
+        if (!builtinp(function->name)) error(PSTR("can't call a symbol"), fname);
         Context = bname;
         checkminmax(bname, nargs);
         object* result = ((fn_ptr_type)lookupfn(bname))(args, env);
@@ -6916,7 +6927,7 @@ object* eval (object* form, object* env) {
         if (!listp(fname)) name = fname->name;
 
         if (isbuiltin(car(function), LAMBDA)) {
-            form = closure(TCstart, name, function, args, &env);
+            form = closure(old_tailcall, name, function, args, &env);
             unprotect();
             int trace = tracing(fname->name);
             if (trace) {
@@ -6928,21 +6939,23 @@ object* eval (object* form, object* env) {
                 printobject(result, pserial); pln(pserial);
                 return result;
             } else {
-                TC = 1;
+                tailcall = true;
                 goto EVAL;
             }
         }
 
         if (isbuiltin(car(function), CLOSURE)) {
             function = cdr(function);
-            form = closure(TCstart, name, function, args, &env);
+            form = closure(old_tailcall, name, function, args, &env);
             unprotect();
-            TC = 1;
+            tailcall = true;
             goto EVAL;
         }
 
     }
-    error(PSTR("illegal function"), fname); return nil;
+    error(PSTR("illegal function"), fname);
+    // unreachable
+    return nil;
 }
 
 // Print functions
