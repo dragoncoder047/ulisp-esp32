@@ -81,10 +81,41 @@ const char stringsizeof[] PROGMEM = "sizeof";
 const char docsizeof[] PROGMEM = "(sizeof obj)\n"
 "Returns the number of Lisp cells the object occupies in memory.";
 
+void destructure (object* structure, object* data, object** env) {
+    if (structure == nil) return;
+    if (symbolp(structure)) push(cons(structure, data), *env);
+    else if (consp(structure)) {
+        if (!consp(data)) error(canttakecar, data);
+        destructure(car(structure), car(data), env);
+        destructure(cdr(structure), cdr(data), env);
+    }
+    else error(invalidarg, structure);
+}
+
+object* sp_destructuring_bind (object* args, object* env) {
+    object* structure = first(args);
+    object* data_expr = second(args);
+    protect(data_expr);
+    object* data = eval(data_expr, env);
+    unprotect();
+    object* body = cddr(args);
+    destructure(structure, data, &env);
+    protect(body);
+    object* result = eval(tf_progn(body, env), env);
+    unprotect();
+    return result;
+}
+
+const char stringdestructuringbind[] PROGMEM = "destructuring-bind";
+const char docdestructuringbind[] PROGMEM = "(destructuring-bind structure data [forms*])\n\n"
+"Recursively assigns the datums of `data` to the symbols named in `structure`,\n"
+"and then evaluates forms in that new environment.";
+
 // Symbol lookup table
 const tbl_entry_t ExtensionsTable[] PROGMEM = {
     { stringnow, fn_now, MINMAX(FUNCTIONS, 0, 3), docnow },
     { stringgensym, fn_gensym, MINMAX(FUNCTIONS, 0, 1), docgensym },
     { stringintern, fn_intern, MINMAX(FUNCTIONS, 1, 1), docintern },
     { stringsizeof, fn_sizeof, MINMAX(FUNCTIONS, 1, 1), docsizeof },
+    { stringdestructuringbind, sp_destructuring_bind, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), docdestructuringbind },
 };
