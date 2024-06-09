@@ -144,7 +144,7 @@ enum stream {                       SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM
 
 typedef uint32_t symbol_t;
 typedef uint8_t minmax_t;
-typedef uint16_t builtin_t;
+typedef uint32_t builtin_t;
 typedef uint16_t flags_t;
 
 typedef struct sobject {
@@ -268,11 +268,11 @@ void plispstr (symbol_t, pfun_t);
 void testescape ();
 bool is_macro_call (object*, object*);
 
-inline uint32_t twist (uint32_t x) {
+inline symbol_t twist (builtin_t x) {
     return (x<<2) | ((x & 0xC0000000)>>30);
 }
 
-inline uint32_t untwist (uint32_t x) {
+inline builtin_t untwist (symbol_t x) {
     return (x>>2 & 0x3FFFFFFF) | ((x & 0x03)<<30);
 }
 
