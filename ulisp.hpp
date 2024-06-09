@@ -184,7 +184,7 @@ typedef int (*gfun_t)();
 typedef void (*pfun_t)(char);
 
 enum builtins: builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, MACRO, LET, LETSTAR,
-CLOSURE, PSTAR, QUOTE, BACKQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, DEFVAR, DEFMACRO, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
+CLOSURE, PSTAR, QUOTE, BACKQUOTE, UNQUOTE, UNQUOTE_SPLICING, CONS, APPEND, DEFUN, SETF, DEFVAR, DEFMACRO, CAR, FIRST, CDR, REST, NTH, AREF, STRINGFN, PINMODE, DIGITALWRITE,
 ANALOGREAD, REGISTER, FORMAT, 
  };
 
@@ -2162,6 +2162,16 @@ object* sp_or (object* args, object* env) {
     return nil;
 }
 
+// Need to do manual search because findvalue() uses eq() but we need equal() for this.
+object* find_setf_func (object* whatenv, object* funcname) {
+    object* what = cons(bsymbol(SETF), cons(funcname, nil));
+    for (object* z = whatenv; z != nil; z = cdr(z)) {
+        object* pair = car(z);
+        if (equal(what, car(pair))) return pair;
+    }
+    return nil;
+}
+
 /*
     (defun name (parameters) form*)
     Defines a function.
@@ -2169,9 +2179,14 @@ object* sp_or (object* args, object* env) {
 object* sp_defun (object* args, object* env) {
     (void) env;
     object* var = first(args);
-    if (!symbolp(var)) error(notasymbol, var);
+    if (!symbolp(var)) {
+        // Check for (setf foo) forms
+        if (consp(var) && listlength(var) == 2 && eq(first(var), bsymbol(SETF))) /* do nothing */;
+        else error(notasymbol, var);
+    }
     object* val = cons(bsymbol(LAMBDA), cdr(args));
     object* pair = value(var->name, GlobalEnv);
+    if (consp(var) && !pair) pair = find_setf_func(GlobalEnv, second(var));
     if (pair != NULL) cdr(pair) = val;
     else push(cons(var, val), GlobalEnv);
     return var;
@@ -2384,12 +2399,27 @@ object* sp_decf (object* args, object* env) {
 object* sp_setf (object* args, object* env) {
     int bit;
     object* arg = nil;
+    object* placeform = nil;
+    object** loc;
     while (args != NULL) {
         if (cdr(args) == NULL) error2(oddargs);
-        object** loc = place(first(args), env, &bit);
+        placeform = first(args);
+        // Check for special defsetf forms first before calling place()
+        if (consp(placeform)) {
+            object* funcname = first(placeform);
+            object* userdef = find_setf_func(env, funcname);
+            if (!userdef) userdef = find_setf_func(GlobalEnv, funcname);
+            if (userdef) {
+                // usercode should be a lambda
+                arg = eval(cons(cdr(userdef), cons(second(args), rest(placeform))), env);
+                goto next;
+            }
+        }
         arg = eval(second(args), env);
+        loc = place(placeform, env, &bit);
         if (bit == -1) *loc = arg;
         else *loc = number((checkinteger(*loc) & ~(1<<bit)) | checkbitvalue(arg)<<bit);
+        next:
         args = cddr(args);
     }
     return arg;
@@ -6451,6 +6481,7 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
     { string92, fn_append, MINMAX(FUNCTIONS, 0, UNLIMITED), doc92 },
     { string14, sp_defun, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc14 },
+    { string36, sp_setf, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc36 },
     { string15, sp_defvar, MINMAX(SPECIAL_FORMS, 1, 3), doc15 },
     { stringdefmacro, sp_defmacro, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), docdefmacro },
     { string16, fn_car, MINMAX(FUNCTIONS, 1, 1), doc16 },
@@ -6473,7 +6504,6 @@ const tbl_entry_t BuiltinTable[] PROGMEM = {
     { string33, sp_pop, MINMAX(SPECIAL_FORMS, 1, 1), doc33 },
     { string34, sp_incf, MINMAX(SPECIAL_FORMS, 1, 2), doc34 },
     { string35, sp_decf, MINMAX(SPECIAL_FORMS, 1, 2), doc35 },
-    { string36, sp_setf, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc36 },
     { string37, sp_dolist, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc37 },
     { string38, sp_dotimes, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc38 },
     { string39, sp_trace, MINMAX(SPECIAL_FORMS, 0, 1), doc39 },
