@@ -1616,7 +1616,7 @@ object* apropos (object* arg, bool print) {
                 uint8_t ft = fntype(getminmax(i));
                 pbuiltin((builtin_t)i, pserial); pserial(' '); pserial('(');
                 if (ft == FUNCTIONS) pfstring("function", pserial);
-                else if (ft == SPECIAL_FORMS) pfstring("special form", pserial);
+                else if (ft == SPECIAL_FORMS || ft == TAIL_FORMS) pfstring("special form", pserial);
                 else pfstring("symbol/keyword", pserial);
                 pserial(')'); pln(pserial);
             } else {
