@@ -1,5 +1,5 @@
-/* uLisp ESP Release 4.4d - www.ulisp.com
-   David Johnson-Davies - www.technoblogy.com - 30th June 2023
+/* uLisp ESP Release 4.6 - www.ulisp.com
+   David Johnson-Davies - www.technoblogy.com - 13th June 2024
 
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
@@ -23,7 +23,7 @@
 #include "extensions.hpp"
 #include "bignums.hpp"
 
-const char foo[] PROGMEM =
+const char foo[] =
 "(defvar *loaded* nil)"
 "(defun load(filename)(if(null(search(list filename)*loaded*))(with-sd-card(f filename)(push filename *loaded*)(loop(let((form(read f)))(unless form(return))(eval form))))))"
 "(load \"main.lisp\")"
@@ -38,7 +38,7 @@ int getfoo() {
         return temp;
     }
     if (fooi == foolen) return -1;
-    char c = (char)pgm_read_byte(&foo[fooi]);
+    char c = foo[fooi];
     fooi++;
     return c;
 }
@@ -69,7 +69,7 @@ void setup () {
     ulispinit();
     addtable(ExtensionsTable);
     addtable(BignumsTable);
-    Serial.println(F("\n\n\nuLisp 4.4d-mod!"));
+    Serial.println(F("\n\n\nuLisp 4.6-mod!"));
     sdmain();
 }
 
