@@ -1489,9 +1489,9 @@ object* iptostring (uint32_t ip) {
 object* lispstring (const char* s) {
     object* obj = newstring();
     object* tail = obj;
-    while(1) {
+    for (;;) {
         char ch = *s++;
-        if (ch == 0) break;
+        if (ch == '\0') break;
         if (ch == '\\') ch = *s++;
         buildstring(ch, &tail);
     }
@@ -1511,18 +1511,42 @@ int stringcompare (object* args, bool lt, bool gt, bool eq) {
     object* arg2 = checkstring(second(args));
     arg1 = cdr(arg1);
     arg2 = cdr(arg2);
-    int m = 0; chars_t a = 0, b = 0;
-    while ((arg1 != NULL) || (arg2 != NULL)) {
-        if (arg1 == NULL) return lt ? m : -1;
-        if (arg2 == NULL) return gt ? m : -1;
+    int m = 0;
+    chars_t a = 0, b = 0;
+    while (arg1 || arg2) {
+        if (!arg1) return lt ? m : -1;
+        if (!arg2) return gt ? m : -1;
         a = arg1->chars; b = arg2->chars;
-        if (a < b) { if (lt) { m = m + sizeof(int); while (a != b) { m--; a = a >> 8; b = b >> 8; } return m; } else return -1; }
-        if (a > b) { if (gt) { m = m + sizeof(int); while (a != b) { m--; a = a >> 8; b = b >> 8; } return m; } else return -1; }
-        arg1 = car(arg1); arg2 = car(arg2);
-        m = m + sizeof(int);
+        if (a < b) {
+            if (lt) {
+                m += sizeof(int);
+                while (a != b) {
+                    m--;
+                    a = a >> 8;
+                    b = b >> 8;
+                }
+                return m;
+            }
+            else return -1;
+        }
+        if (a > b) {
+            if (gt) {
+                m += sizeof(int);
+                while (a != b) {
+                    m--;
+                    a = a >> 8;
+                    b = b >> 8;
+                }
+                return m;
+            }
+            else return -1;
+        }
+        arg1 = car(arg1);
+        arg2 = car(arg2);
+        m += sizeof(int);
     }
     if (eq) {
-        m = m - sizeof(int);
+        m -= sizeof(int);
         while (a != 0) {
             m++;
             a = a << 8;
