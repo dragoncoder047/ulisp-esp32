@@ -101,7 +101,7 @@ object* sp_destructuring_bind (object* args, object* env) {
     object* body = cddr(args);
     destructure(structure, data, &env);
     protect(body);
-    object* result = eval(tf_progn(body, env), env);
+    object* result = progn_no_tc(body, env);
     unprotect();
     return result;
 }

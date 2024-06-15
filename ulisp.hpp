@@ -128,7 +128,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define TRACEMAX 3 // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
 enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD, BACKTICK, COMMA, COMMA_AT };
-enum fntypes_t { OTHER_FORMS, TAIL_FORMS, FUNCTIONS, SPECIAL_FORMS };
+enum fntypes_t { OTHER_FORMS, SPECIAL_FORMS, FUNCTIONS, SPECIAL_SYMBOLS };
 
 // Stream names used by printobject
 const char serialstream[] = "serial";
@@ -219,8 +219,8 @@ unsigned int TraceDepth[TRACEMAX];
 void* StackBottom;
 
 // Flags
-enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS, INCATCH };
-volatile flags_t Flags = 0b00001; // PRINTREADABLY set by default
+enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC, NOECHO, MUFFLEERRORS, TAILCALL, INCATCH };
+volatile flags_t Flags = 1; // PRINTREADABLY set by default
 
 // Forward references
 object* tee;
@@ -259,7 +259,8 @@ int stringcompare (object*, bool, bool, bool);
 void pbuiltin (builtin_t, pfun_t);
 object* value (symbol_t, object*);
 void supersub (object*, int, int, pfun_t);
-object* tf_progn (object*, object*);
+object* sp_progn (object*, object*);
+object* progn_no_tc (object*, object*);
 object* fn_princtostring (object*, object*);
 object* read (gfun_t);
 object* eval (object*, object*);
@@ -586,9 +587,11 @@ const char wifi[] = ":wi-fi";
 const char gfx[] = ":gfx";
 
 /*
-    features - create a list of features symbols from const strings.
+    *features* - create a list of features symbols from const strings.
 */
-object* features () {
+object* ss_features (object* args, object* env) {
+    (void)env;
+    if (args) error2("*features* is read only");
     object* result = NULL;
     #ifdef gfxsupport
     push(internlong(gfx), result);
@@ -1616,7 +1619,8 @@ object* apropos (object* arg, bool print) {
                 uint8_t ft = fntype(getminmax(i));
                 pbuiltin((builtin_t)i, pserial); pserial(' '); pserial('(');
                 if (ft == FUNCTIONS) pfstring("function", pserial);
-                else if (ft == SPECIAL_FORMS || ft == TAIL_FORMS) pfstring("special form", pserial);
+                else if (ft == SPECIAL_FORMS) pfstring("special form", pserial);
+                else if (ft == SPECIAL_SYMBOLS) pfstring("special symbol", pserial);
                 else pfstring("symbol/keyword", pserial);
                 pserial(')'); pln(pserial);
             } else {
@@ -1774,7 +1778,7 @@ object* closure (bool tc, symbol_t name, object* function, object* args, object*
     if (trace) { pserial(')'); pln(pserial); }
     // Do an implicit progn
     if (tc) push(nil, *env);
-    return tf_progn(function, *env);
+    return sp_progn(function, *env);
 }
 
 object* apply (object* function, object* args, object* env) {
@@ -2045,7 +2049,7 @@ object* dobody (object* args, object* env, bool star) {
         }
     }
     unprotect();
-    return eval(tf_progn(results, env), env);
+    return progn_no_tc(results, env);
 }
 
 // I2C interface for up to two ports, using Arduino Wire
@@ -2367,7 +2371,7 @@ void supersub (object* form, int lm, int super, pfun_t pfun) {
     if (symbolp(arg) && builtinp(arg->name)) {
         minmax_t minmax = getminmax(builtin(arg->name));
         if (minmax == MINMAX(SPECIAL_FORMS, 2, UNLIMITED) || minmax == MINMAX(SPECIAL_FORMS, 1, 3)) special = 2; // defun, setq, setf, defvar
-        else if (minmax == MINMAX(SPECIAL_FORMS, 1, UNLIMITED) || minmax == MINMAX(OTHER_FORMS, 1, UNLIMITED) || minmax == MINMAX(TAIL_FORMS, 1, UNLIMITED) || minmax == MINMAX(TAIL_FORMS, 2, 3)) special = 1;
+        else if (minmax == MINMAX(SPECIAL_FORMS, 1, UNLIMITED) || minmax == MINMAX(OTHER_FORMS, 1, UNLIMITED) || minmax == MINMAX(SPECIAL_FORMS, 2, 3)) special = 1;
     }
     while (form != NULL) {
         if (atom(form)) { pfstring(" . ", pfun); printobject(form, pfun); pfun(')'); return; }
@@ -2526,7 +2530,7 @@ object* sp_loop (object* args, object* env) {
     Exits from a (dotimes ...), (dolist ...), or (loop ...) loop construct and returns value.
 */
 object* sp_return (object* args, object* env) {
-    object* result = eval(tf_progn(args,env), env);
+    object* result = progn_no_tc(args, env);
     setflag(RETURNFLAG);
     return result;
 }
@@ -2837,7 +2841,7 @@ object* sp_formillis (object* args, object* env) {
     unsigned long start = millis();
     unsigned long now, total = 0;
     if (param != NULL) total = checkinteger(eval(first(param), env));
-    eval(tf_progn(cdr(args),env), env);
+    progn_no_tc(cdr(args), env);
     do {
         now = millis() - start;
         testescape();
@@ -2882,7 +2886,7 @@ object* sp_withoutputtostring (object* args, object* env) {
     object* string = startstring();
     protect(string);
     object* forms = cdr(args);
-    eval(tf_progn(forms,env), env);
+    progn_no_tc(forms, env);
     unprotect();
     return string;
 }
@@ -2903,7 +2907,7 @@ object* sp_withserial (object* args, object* env) {
     push(pair,env);
     serialbegin(address, baud);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     serialend(address);
     return result;
 }
@@ -2940,7 +2944,7 @@ object* sp_withi2c (object* args, object* env) {
     object* pair = cons(var, (I2Cstart(port, address & 0x7F, read)) ? stream(I2CSTREAM, address) : nil);
     push(pair, env);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     I2Cstop(port, read);
     return result;
 }
@@ -2980,7 +2984,7 @@ object* sp_withspi (object* args, object* env) {
     SPI.beginTransaction(SPISettings(((unsigned long)clock * 1000), bitorder, mode));
     digitalWrite(pin, LOW);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     digitalWrite(pin, HIGH);
     SPI.endTransaction();
     return result;
@@ -3019,7 +3023,7 @@ object* sp_withsdcard (object* args, object* env) {
     object* pair = cons(var, stream(SDSTREAM, 1));
     push(pair,env);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     if (mode >= 1) SDpfile.close(); else SDgfile.close();
     return result;
 #else
@@ -3035,16 +3039,26 @@ object* sp_withsdcard (object* args, object* env) {
     (progn form*)
     Evaluates several forms grouped together into a block, and returns the result of evaluating the last form.
 */
-object* tf_progn (object* args, object* env) {
+object* sp_progn (object* args, object* env) {
     if (args == NULL) return nil;
     object* more = cdr(args);
     while (more != NULL) {
         object* result = eval(car(args),env);
-        if (tstflag(RETURNFLAG)) return quoteit(QUOTE, result); // kludge to keep value from getting eval'ed again because this is a tail form
+        if (tstflag(RETURNFLAG)) return result;
         args = more;
         more = cdr(args);
     }
+    setflag(TAILCALL);
     return car(args);
+}
+
+object* progn_no_tc (object* args, object* env) {
+    object* value = sp_progn(args, env);
+    if (tstflag(TAILCALL)) {
+        clrflag(TAILCALL);
+        value = eval(value, env);
+    }
+    return value;
 }
 
 /*
@@ -3052,11 +3066,18 @@ object* tf_progn (object* args, object* env) {
     Evaluates test. If it's non-nil the form then is evaluated and returned;
     otherwise the form else is evaluated and returned.
 */
-object* tf_if (object* args, object* env) {
+object* sp_if (object* args, object* env) {
     if (args == NULL || cdr(args) == NULL) error2(toofewargs);
-    if (eval(first(args), env) != nil) return second(args);
+    if (eval(first(args), env) != nil) {
+        setflag(TAILCALL);
+        return second(args);
+    }
     args = cddr(args);
-    return (args != NULL) ? first(args) : nil;
+    if (args) {
+        setflag(TAILCALL);
+        return first(args);
+    }
+    return nil;
 }
 
 /*
@@ -3065,14 +3086,15 @@ object* tf_if (object* args, object* env) {
     If the test evaluates to non-nil the forms are evaluated, and the last value is returned as the result of the cond.
     If the test evaluates to nil, none of the forms are evaluated, and the next argument is processed in the same way.
 */
-object* tf_cond (object* args, object* env) {
+object* sp_cond (object* args, object* env) {
     while (args != NULL) {
         object* clause = first(args);
         if (!consp(clause)) error(illegalclause, clause);
         object* test = eval(first(clause), env);
         object* forms = cdr(clause);
         if (test != nil) {
-            if (forms == NULL) return quoteit(QUOTE, test); else return tf_progn(forms, env);
+            if (forms == NULL) return test;
+            else return sp_progn(forms, env);
         }
         args = cdr(args);
     }
@@ -3083,9 +3105,9 @@ object* tf_cond (object* args, object* env) {
     (when test form*)
     Evaluates the test. If it's non-nil the forms are evaluated and the last value is returned.
 */
-object* tf_when (object* args, object* env) {
+object* sp_when (object* args, object* env) {
     if (args == NULL) error2(noargument);
-    if (eval(first(args), env) != nil) return tf_progn(cdr(args),env);
+    if (eval(first(args), env) != nil) return sp_progn(cdr(args), env);
     else return nil;
 }
 
@@ -3093,10 +3115,10 @@ object* tf_when (object* args, object* env) {
     (unless test form*)
     Evaluates the test. If it's nil the forms are evaluated and the last value is returned.
 */
-object* tf_unless (object* args, object* env) {
+object* sp_unless (object* args, object* env) {
     if (args == NULL) error2(noargument);
     if (eval(first(args), env) != nil) return nil;
-    else return tf_progn(cdr(args),env);
+    else return sp_progn(cdr(args), env);
 }
 
 /*
@@ -3104,7 +3126,7 @@ object* tf_unless (object* args, object* env) {
     Evaluates a keyform to produce a test key, and then tests this against a series of arguments,
     each of which is a list containing a key optionally followed by one or more forms.
 */
-object* tf_case (object* args, object* env) {
+object* sp_case (object* args, object* env) {
     object* test = eval(first(args), env);
     args = cdr(args);
     while (args != NULL) {
@@ -3114,10 +3136,10 @@ object* tf_case (object* args, object* env) {
         object* forms = cdr(clause);
         if (consp(key)) {
             while (key != NULL) {
-                if (eq(test,car(key))) return tf_progn(forms, env);
+                if (eq(test,car(key))) return sp_progn(forms, env);
                 key = cdr(key);
             }
-        } else if (eq(test,key) || eq(key,tee)) return tf_progn(forms, env);
+        } else if (eq(test, key) || eq(key, tee)) return sp_progn(forms, env);
         args = cdr(args);
     }
     return nil;
@@ -3127,7 +3149,7 @@ object* tf_case (object* args, object* env) {
     (and item*)
     Evaluates its arguments until one returns nil, and returns the last value.
 */
-object* tf_and (object* args, object* env) {
+object* sp_and (object* args, object* env) {
     if (args == NULL) return tee;
     object* more = cdr(args);
     while (more != NULL) {
@@ -3135,6 +3157,7 @@ object* tf_and (object* args, object* env) {
         args = more;
         more = cdr(args);
     }
+    setflag(TAILCALL);
     return car(args);
 }
 
@@ -5437,7 +5460,7 @@ object* sp_withclient (object* args, object* env) {
     object* pair = cons(var, stream(WIFISTREAM, n));
     push(pair,env);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     client.stop();
     return result;
 }
@@ -5539,7 +5562,7 @@ object* sp_withgfx (object* args, object* env) {
     object* pair = cons(var, stream(GFXSTREAM, 1));
     push(pair,env);
     object* forms = cdr(args);
-    object* result = eval(tf_progn(forms,env), env);
+    object* result = progn_no_tc(forms, env);
     return result;
 #else
     (void) args, (void) env;
@@ -5884,7 +5907,7 @@ object* sp_catch (object* args, object* env) {
 
     if (!setjmp(dynamic_handler)) {
         // First: run forms
-        result = eval(tf_progn(forms, env), env);
+        result = progn_no_tc(forms, env);
         // If we get here nothing was thrown
         GCStack = current_GCStack;
         handler = previous_handler;
@@ -5986,9 +6009,9 @@ object* process_backquote (object* arg, size_t level = 0) {
 // but evaluates the result in the current environment before returning it, either by
 // recursively calling EVAL with the result and env, or by assigning ast with the result
 // and continuing execution at the top of the loop (TCO)."
-object* tf_backquote (object* args, object* env) {
+object* sp_backquote (object* args, object* env) {
     object* result = process_backquote(first(args));
-    // Tail call
+    setflag(TAILCALL);
     return result;
 }
 
@@ -6892,7 +6915,7 @@ const tbl_entry_t BuiltinTable[] = {
     { string1, NULL, MINMAX(OTHER_FORMS, 0, 0), doc1 },
     { string2, NULL, MINMAX(OTHER_FORMS, 0, 0), doc2 },
     { string3, NULL, MINMAX(OTHER_FORMS, 0, 0), doc3 },
-    { stringfeatures, NULL, MINMAX(OTHER_FORMS, 0, 0), docfeatures },
+    { stringfeatures, ss_features, MINMAX(SPECIAL_SYMBOLS, 0, 0), docfeatures },
     { string4, NULL, MINMAX(OTHER_FORMS, 0, 0), NULL },
     { string5, NULL, MINMAX(OTHER_FORMS, 0, 0), NULL },
     { stringtest, NULL, MINMAX(OTHER_FORMS, 0, 0), NULL },
@@ -6906,7 +6929,7 @@ const tbl_entry_t BuiltinTable[] = {
     { string11, NULL, MINMAX(OTHER_FORMS, 1, UNLIMITED), NULL },
     { string12, NULL, MINMAX(OTHER_FORMS, 0, UNLIMITED), NULL },
     { string13, sp_quote, MINMAX(SPECIAL_FORMS, 1, 1), NULL },
-    { stringbackquote, tf_backquote, MINMAX(TAIL_FORMS, 1, 1), docbackquote },
+    { stringbackquote, sp_backquote, MINMAX(SPECIAL_FORMS, 1, 1), docbackquote },
     { stringunquote, bq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), docunquote },
     { stringuqsplicing, bq_invalid, MINMAX(SPECIAL_FORMS, 1, 1), docunquotesplicing },
     { string57, fn_cons, MINMAX(FUNCTIONS, 2, 2), doc57 },
@@ -6949,13 +6972,13 @@ const tbl_entry_t BuiltinTable[] = {
     { string45, sp_withi2c, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc45 },
     { string46, sp_withspi, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc46 },
     { string47, sp_withsdcard, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc47 },
-    { string48, tf_progn, MINMAX(TAIL_FORMS, 0, UNLIMITED), doc48 },
-    { string49, tf_if, MINMAX(TAIL_FORMS, 2, 3), doc49 },
-    { string50, tf_cond, MINMAX(TAIL_FORMS, 0, UNLIMITED), doc50 },
-    { string51, tf_when, MINMAX(TAIL_FORMS, 1, UNLIMITED), doc51 },
-    { string52, tf_unless, MINMAX(TAIL_FORMS, 1, UNLIMITED), doc52 },
-    { string53, tf_case, MINMAX(TAIL_FORMS, 1, UNLIMITED), doc53 },
-    { string54, tf_and, MINMAX(TAIL_FORMS, 0, UNLIMITED), doc54 },
+    { string48, sp_progn, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc48 },
+    { string49, sp_if, MINMAX(SPECIAL_FORMS, 2, 3), doc49 },
+    { string50, sp_cond, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc50 },
+    { string51, sp_when, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc51 },
+    { string52, sp_unless, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc52 },
+    { string53, sp_case, MINMAX(SPECIAL_FORMS, 1, UNLIMITED), doc53 },
+    { string54, sp_and, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc54 },
     { string55, fn_not, MINMAX(FUNCTIONS, 1, 1), doc55 },
     { string56, fn_not, MINMAX(FUNCTIONS, 1, 1), NULL },
     { string58, fn_atom, MINMAX(FUNCTIONS, 1, 1), doc58 },
@@ -7279,9 +7302,10 @@ object* eval (object* form, object* env) {
         if (pair != NULL) return cdr(pair);
         pair = value(name, GlobalEnv);
         if (pair != NULL) return cdr(pair);
-        // special symbol macro kludge
+        // special symbol macro handling
         else if (builtinp(name)) {
-            if (builtin(name) == FEATURES) return features();
+            builtin_t bname = builtin(name);
+            if (fntype(getminmax(bname)) == SPECIAL_SYMBOLS) return ((fn_ptr_type)lookupfn(bname))(NULL, env);
             return form;
         }
         Context = NIL;
@@ -7320,9 +7344,14 @@ object* eval (object* form, object* env) {
             }
             env = newenv;
             unprotect();
-            form = tf_progn(forms,env);
-            tailcall = old_tailcall;
-            goto EVAL;
+            clrflag(TAILCALL);
+            form = sp_progn(forms, env);
+            if (tstflag(TAILCALL)) {
+                clrflag(TAILCALL);
+                tailcall = old_tailcall;
+                goto EVAL;
+            }
+            return form;
         }
 
         // MACRO does not do closures.
@@ -7341,15 +7370,13 @@ object* eval (object* form, object* env) {
         if (ft == SPECIAL_FORMS) {
             Context = name;
             checkargs(args);
-            return ((fn_ptr_type)lookupfn(name))(args, env);
-        }
-
-        if (ft == TAIL_FORMS) {
-            Context = name;
-            checkargs(args);
             form = ((fn_ptr_type)lookupfn(name))(args, env);
-            tailcall = true;
-            goto EVAL;
+            if (tstflag(TAILCALL)) {
+                tailcall = true;
+                clrflag(TAILCALL);
+                goto EVAL;
+            }
+            return form;
         }
         if (ft == OTHER_FORMS) error("can't be used as a function", function);
     }
