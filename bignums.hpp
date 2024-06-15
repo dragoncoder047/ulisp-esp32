@@ -489,64 +489,64 @@ object* fn_BIGash (object* args, object* env) {
 }
 
 // Symbol names
-const char stringBIGbignum[] PROGMEM = "$bignum";
-const char stringBIGinteger[] PROGMEM = "$integer";
-const char stringBIGbignumstring[] PROGMEM = "$bignum-string";
-const char stringBIGstringbignum[] PROGMEM = "$string-bignum";
-const char stringBIGzerop[] PROGMEM = "$zerop";
-const char stringBIGdecf[] PROGMEM = "$decf";
-const char stringBIGincf[] PROGMEM = "$incf";
-const char stringBIGadd[] PROGMEM = "$+";
-const char stringBIGsub[] PROGMEM = "$-";
-const char stringBIGmul[] PROGMEM = "$*";
-const char stringBIGdiv[] PROGMEM = "$/";
-const char stringBIGmod[] PROGMEM = "$mod";
-const char stringBIGequal[] PROGMEM = "$=";
-const char stringBIGless[] PROGMEM = "$<";
-const char stringBIGgreater[] PROGMEM = "$>";
-const char stringBIGlogand[] PROGMEM = "$logand";
-const char stringBIGlogior[] PROGMEM = "$logior";
-const char stringBIGlogxor[] PROGMEM = "$logxor";
-const char stringBIGash[] PROGMEM = "$ash";
+const char stringBIGbignum[] = "$bignum";
+const char stringBIGinteger[] = "$integer";
+const char stringBIGbignumstring[] = "$bignum-string";
+const char stringBIGstringbignum[] = "$string-bignum";
+const char stringBIGzerop[] = "$zerop";
+const char stringBIGdecf[] = "$decf";
+const char stringBIGincf[] = "$incf";
+const char stringBIGadd[] = "$+";
+const char stringBIGsub[] = "$-";
+const char stringBIGmul[] = "$*";
+const char stringBIGdiv[] = "$/";
+const char stringBIGmod[] = "$mod";
+const char stringBIGequal[] = "$=";
+const char stringBIGless[] = "$<";
+const char stringBIGgreater[] = "$>";
+const char stringBIGlogand[] = "$logand";
+const char stringBIGlogior[] = "$logior";
+const char stringBIGlogxor[] = "$logxor";
+const char stringBIGash[] = "$ash";
 
 // Documentation strings
-const char docBIGbignum[] PROGMEM = "($bignum int)\n"
+const char docBIGbignum[] = "($bignum int)\n"
                                     "Converts an integer to a bignum and returns it.";
-const char docBIGinteger[] PROGMEM = "($integer bignum)\n"
+const char docBIGinteger[] = "($integer bignum)\n"
                                      "Converts a bignum to an integer and returns it.";
-const char docBIGbignumstring[] PROGMEM = "($bignum-string bignum [base])\n"
+const char docBIGbignumstring[] = "($bignum-string bignum [base])\n"
                                           "Converts a bignum to a string in base 10 (default) or 16 and returns it.";
-const char docBIGstringbignum[] PROGMEM = "($string-bignum bignum [base])\n"
+const char docBIGstringbignum[] = "($string-bignum bignum [base])\n"
                                           "Converts a bignum to a string in the specified base (default 10) and returns it.";
-const char docBIGzerop[] PROGMEM = "($zerop bignum)\n"
+const char docBIGzerop[] = "($zerop bignum)\n"
                                    "Tests whether a bignum is zero, allowing for trailing zeros.";
-const char docBIGadd[] PROGMEM = "($+ bignum1 bignum2)\n"
+const char docBIGadd[] = "($+ bignum1 bignum2)\n"
                                  "Adds two bignums and returns the sum as a new bignum.";
-const char docBIGsub[] PROGMEM = "($- bignum1 bignum2)\n"
+const char docBIGsub[] = "($- bignum1 bignum2)\n"
                                  "Subtracts two bignums and returns the difference as a new bignum.";
-const char docBIGmul[] PROGMEM = "($* bignum1 bignum2)\n"
+const char docBIGmul[] = "($* bignum1 bignum2)\n"
                                  "Multiplies two bignums and returns the product as a new bignum.";
-const char docBIGdiv[] PROGMEM = "($/ bignum1 bignum2)\n"
+const char docBIGdiv[] = "($/ bignum1 bignum2)\n"
                                  "Divides two bignums and returns the quotient as a new bignum.";
-const char docBIGmod[] PROGMEM = "($mod bignum1 bignum2)\n"
+const char docBIGmod[] = "($mod bignum1 bignum2)\n"
                                  "Divides two bignums and returns the remainder as a new bignum.";
-const char docBIGequal[] PROGMEM = "($= bignum1 bignum2)\n"
+const char docBIGequal[] = "($= bignum1 bignum2)\n"
                                    "Returns t if the two bignums are equal.";
-const char docBIGless[] PROGMEM = "($< bignum1 bignum2)\n"
+const char docBIGless[] = "($< bignum1 bignum2)\n"
                                   "Returns t if bignum1 is less than bignum2.";
-const char docBIGgreater[] PROGMEM = "($> bignum1 bignum2)\n"
+const char docBIGgreater[] = "($> bignum1 bignum2)\n"
                                      "Returns t if bignum1 is greater than bignum2.";
-const char docBIGlogand[] PROGMEM = "($logand bignum bignum)\n"
+const char docBIGlogand[] = "($logand bignum bignum)\n"
                                     "Returns the logical AND of two bignums.";
-const char docBIGlogior[] PROGMEM = "($logior bignum bignum)\n"
+const char docBIGlogior[] = "($logior bignum bignum)\n"
                                     "Returns the logical inclusive OR of two bignums.";
-const char docBIGlogxor[] PROGMEM = "($logxor bignum bignum)\n"
+const char docBIGlogxor[] = "($logxor bignum bignum)\n"
                                     "Returns the logical exclusive OR of two bignums.";
-const char docBIGash[] PROGMEM = "($ash bignum shift)\n"
+const char docBIGash[] = "($ash bignum shift)\n"
                                  "Returns bignum shifted by shift bits; positive means left.";
 
 // Symbol lookup table
-const tbl_entry_t BignumsTable[] PROGMEM = {
+const tbl_entry_t BignumsTable[] = {
     { stringBIGbignum, fn_BIGbignum, MINMAX(FUNCTIONS, 1, 1), docBIGbignum },
     { stringBIGinteger, fn_BIGinteger, MINMAX(FUNCTIONS, 1, 1), docBIGinteger },
     { stringBIGbignumstring, fn_BIGbignumstring, MINMAX(FUNCTIONS, 1, 2), docBIGbignumstring },
