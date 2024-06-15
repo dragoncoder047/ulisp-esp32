@@ -7326,7 +7326,6 @@ object* eval (object* form, object* env) {
         builtin_t name = builtin(function->name);
 
         if ((name == LET) || (name == LETSTAR)) {
-            bool old_tailcall = tailcall;
             if (args == NULL) error2(noargument);
             object* assigns = first(args);
             if (!listp(assigns)) error(notalist, assigns);
@@ -7348,7 +7347,6 @@ object* eval (object* form, object* env) {
             form = sp_progn(forms, env);
             if (tstflag(TAILCALL)) {
                 clrflag(TAILCALL);
-                tailcall = old_tailcall;
                 goto EVAL;
             }
             return form;
