@@ -112,7 +112,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define stringify(x)       stringifyX(x)
 #define PACKEDS            0x43238000
 #define BUILTINS           0xF4240000
-#define ENDFUNCTIONS       1536
+#define ENDFUNCTIONS       0x0BDC0000
 
 #define fntype(x)          (((uint8_t)(x))>>6)
 #define getminargs(x)      ((((uint8_t)(x))>>3)&7)
