@@ -44,6 +44,16 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #endif
 #endif
 
+#ifdef __has_include
+#if __has_include(<ESP32Servo.h>)
+#include <ESP32Servo.h>
+#include <analogWrite.h>
+#include <ESP32Tone.h>
+#include <ESP32PWM.h>
+#define toneimplemented
+#endif
+#endif
+
 #include <SD.h>
 #define SDSIZE 172
 
@@ -56,10 +66,6 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define LITTLEFS
 #include "FS.h"
 #include <LittleFS.h>
-
-#ifndef analogWrite
-#define analogWrite(x,y) dacWrite((x),(y))
-#endif
 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 13
@@ -2224,33 +2230,36 @@ void checkanalogread (int pin) {
 }
 
 void checkanalogwrite (int pin) {
-//   if (!(pin>=25 && pin<=26)) error("invalid pin", number(pin));
-    (void)pin;
+    #ifdef toneimplemented
+    // ERROR PWM channel unavailable on pin requested! 1
+    // PWM available on: 2,4,5,12-19,21-23,25-27,32-33
+    if (!(pin==2 || pin==4 || pin==5 || (pin>=12 && pin<=19) || (pin>=21 && pin<=23) || (pin>=25 && pin<=27) || pin==32 || pin==33)) error("not a PWM-capable pin", number(pin));
+    #else
+    if (!(pin>=25 && pin<=26)) error("not a DAC pin", number(pin));
+    #endif
 }
 
 // Note
 
-#ifndef toneimplemented
-void tone (int pin, int note) {
-    (void) pin, (void) note;
-}
-
-void noTone (int pin) {
-    (void) pin;
-}
-#endif
-
 const int scale[] = {4186,4435,4699,4978,5274,5588,5920,6272,6645,7040,7459,7902};
 
 void playnote (int pin, int note, int octave) {
+    #ifdef toneimplemented
     int oct = octave + note/12;
     int prescaler = 8 - oct;
     if (prescaler<0 || prescaler>8) error("octave out of range", number(prescaler));
     tone(pin, scale[note%12]>>prescaler);
+    #else
+    error2("not available");
+    #endif
 }
 
 void nonote (int pin) {
+    #ifdef toneimplemented
     noTone(pin);
+    #else
+    error2("not available");
+    #endif
 }
 
 // Sleep
@@ -5027,7 +5036,12 @@ object* fn_analogwrite (object* args, object* env) {
     else pin = checkinteger(arg);
     checkanalogwrite(pin);
     object* value = second(args);
-    analogWrite(pin, checkinteger(value));
+    #ifdef toneimplemented
+    analogWrite
+    #else
+    dacWrite
+    #endif
+    (pin, checkinteger(value));
     return value;
 }
 

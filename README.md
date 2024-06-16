@@ -7,6 +7,9 @@ For more about the original ulisp-esp see <http://www.ulisp.com/show?3M#esp-vers
 This is based off of uLisp 4.6. For the old patches (some of which don't work) for
 uLisp 4.3a please see the [4.3a-old](https://github.com/dragoncoder047/ulisp-esp32/tree/4.3a-old) branch.
 
+> [!NOTE]
+> This version includes (requires?) the [ESP32Servo](https://www.arduino.cc/reference/en/libraries/esp32servo/) library to get the analogWrite() and tone() functioning correctly. If you don't have it installed uLisp will compile but you won't have analogWrite() and tone().
+
 New features, some care in editing required:
 * Lisp `:keywords` that auto-quote themselves
 * Ability to add multiple (more than one) extension tables (using `calloc()`) *may not be portable to other platforms*

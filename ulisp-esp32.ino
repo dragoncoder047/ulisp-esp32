@@ -16,7 +16,6 @@
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
-#define toneimplemented
 
 // Includes
 #include "ulisp.hpp"
