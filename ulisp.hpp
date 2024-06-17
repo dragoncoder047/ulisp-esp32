@@ -23,14 +23,6 @@
 const char LispLibrary[] = "";
 #endif
 
-// Compile options
-
-#define printfreespace
-#define printgcs
-#define sdcardsupport
-// #define gfxsupport
-// #define lisplibrary
-
 #if defined(gfxsupport)
 #define COLOR_WHITE ST77XX_WHITE
 #define COLOR_BLACK ST77XX_BLACK
