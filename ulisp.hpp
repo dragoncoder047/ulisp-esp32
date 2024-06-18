@@ -137,7 +137,7 @@ const char wifistream[] = "wifi";
 const char stringstream[] = "string";
 const char gfxstream[] = "gfx";
 const char* const streamname[] = {serialstream, i2cstream, spistream, sdstream, wifistream, stringstream, gfxstream};
-enum stream {               SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM};
+enum stream {                     SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM};
 
 // Typedefs
 
@@ -199,6 +199,7 @@ size_t Freespace = 0;
 object* Freelist;
 builtin_t Context;
 
+object* tee;
 object* GlobalEnv;
 object* GCStack = NULL;
 object* GlobalString;
@@ -221,7 +222,6 @@ enum flag { PRINTREADABLY, RETURNFLAG, ESCAPE, EXITEDITOR, LIBRARYLOADED, NOESC,
 volatile flags_t Flags = 1; // PRINTREADABLY set by default
 
 // Forward references
-object* tee;
 bool builtin_keywordp (object*);
 bool keywordp (object*);
 void pfstring (const char*, pfun_t);
@@ -898,7 +898,7 @@ int isbuiltin (object* obj, builtin_t n) {
     return symbolp(obj) && obj->name == sym(n);
 }
 
-bool builtinp (symbol_t name) {
+inline bool builtinp (symbol_t name) {
     return (untwist(name) >= BUILTINS);
 }
 
@@ -2361,29 +2361,6 @@ void superprint (object* form, int lm, pfun_t pfun) {
         }
         pfun(')');
     }
-}
-
-/*
-    supersub - subroutine used by pprint
-*/
-void supersub (object* form, int lm, int super, pfun_t pfun) {
-    int special = 0, separate = 1;
-    object* arg = car(form);
-    if (symbolp(arg) && builtinp(arg->name)) {
-        minmax_t minmax = getminmax(builtin(arg->name));
-        if (minmax == MINMAX(SPECIAL_FORMS, 2, UNLIMITED) || minmax == MINMAX(SPECIAL_FORMS, 1, 3)) special = 2; // defun, setq, setf, defvar
-        else if (minmax == MINMAX(SPECIAL_FORMS, 1, UNLIMITED) || minmax == MINMAX(OTHER_FORMS, 1, UNLIMITED) || minmax == MINMAX(SPECIAL_FORMS, 2, 3)) special = 1;
-    }
-    while (form != NULL) {
-        if (atom(form)) { pfstring(" . ", pfun); printobject(form, pfun); pfun(')'); return; }
-        else if (separate) { pfun('('); separate = 0; }
-        else if (special) { pfun(' '); special--; }
-        else if (!super) pfun(' ');
-        else { pln(pfun); indent(lm, ' ', pfun); }
-        superprint(car(form), lm, pfun);
-        form = cdr(form);
-    }
-    pfun(')'); return;
 }
 
 /*
