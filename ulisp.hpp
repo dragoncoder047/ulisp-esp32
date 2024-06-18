@@ -87,6 +87,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define integerp(x)        ((x) != NULL && (x)->type == NUMBER)
 #define floatp(x)          ((x) != NULL && (x)->type == FLOAT)
 #define symbolp(x)         ((x) != NULL && (x)->type == SYMBOL)
+#define bfunctionp(x)      ((x) != NULL && (x)->type == BFUNCTION)
 #define stringp(x)         ((x) != NULL && (x)->type == STRING)
 #define characterp(x)      ((x) != NULL && (x)->type == CHARACTER)
 #define arrayp(x)          ((x) != NULL && (x)->type == ARRAY)
@@ -124,7 +125,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 // Constants
 
 #define TRACEMAX 3 // Number of traced functions
-enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
+enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, BFUNCTION=8, STREAM=10, CHARACTER=12, FLOAT=14, ARRAY=16, STRING=18, PAIR=20 };  // ARRAY, STRING, and PAIR must be last
 enum token { UNUSED, OPEN_PAREN, CLOSE_PAREN, SINGLE_QUOTE, PERIOD, BACKTICK, COMMA, COMMA_AT };
 enum fntypes_t { OTHER_FORMS, SPECIAL_FORMS, FUNCTIONS, SPECIAL_SYMBOLS };
 
@@ -223,6 +224,7 @@ volatile flags_t Flags = 1; // PRINTREADABLY set by default
 
 // Forward references
 bool builtin_keywordp (object*);
+inline bool builtinp (symbol_t name);
 bool keywordp (object*);
 void pfstring (const char*, pfun_t);
 char nthchar (object*, int);
@@ -502,6 +504,19 @@ object* symbol (symbol_t name) {
     object* ptr = myalloc();
     ptr->type = SYMBOL;
     ptr->name = name;
+    return ptr;
+}
+
+object* bfunction_from_symbol (object* symbol) {
+    if (!(symbolp(symbol) && builtinp(symbol->name))) return nil;
+    symbol_t nm = symbol->name;
+    for (int i=0; i<WORKSPACESIZE; i++) {
+        object* obj = &Workspace[i];
+        if (obj->type == BFUNCTION && obj->name == nm) return obj;
+    }
+    object* ptr = myalloc();
+    ptr->type = BFUNCTION;
+    ptr->name = nm;
     return ptr;
 }
 
@@ -7279,6 +7294,7 @@ object* eval (object* form, object* env) {
     if (form->type >= NUMBER && form->type <= STRING) return form; // Literal
 
     if (symbolp(form)) {
+        if (form == tee) return form;
         if (keywordp(form)) return form; // Keyword
         symbol_t name = form->name;
         object* pair = value(name, env);
@@ -7289,7 +7305,7 @@ object* eval (object* form, object* env) {
         else if (builtinp(name)) {
             builtin_t bname = builtin(name);
             if (fntype(getminmax(bname)) == SPECIAL_SYMBOLS) return ((fn_ptr_type)lookupfn(bname))(NULL, env);
-            return form;
+            return bfunction_from_symbol(form);
         }
         Context = NIL;
         error("undefined", form);
@@ -7304,7 +7320,7 @@ object* eval (object* form, object* env) {
     if (function == NULL) error2("can't call nil");
     if (!listp(args)) error("can't evaluate a dotted pair", args);
 
-    // List starts with a builtin symbol?
+    // List starts with a builtin special form?
     if (symbolp(function) && builtinp(function->name)) {
         builtin_t name = builtin(function->name);
 
@@ -7381,10 +7397,15 @@ object* eval (object* form, object* env) {
 
     function = car(head);
     args = cdr(head);
-
+    
+    // fail early on calling a symbol
     if (symbolp(function)) {
+        Context = NIL;
+        error("can't call a symbol", function);
+    }
+    if (bfunctionp(function)) {
         builtin_t bname = builtin(function->name);
-        if (!builtinp(function->name)) error("can't call a symbol", fname);
+        if (!builtinp(function->name)) error("can't call a symbol", function);
         Context = bname;
         checkminmax(bname, nargs);
         object* result = ((fn_ptr_type)lookupfn(bname))(args, env);
@@ -7688,6 +7709,15 @@ void printobject (object* form, pfun_t pfun) {
     else if (integerp(form)) pint(form->integer, pfun);
     else if (floatp(form)) pfloat(form->single_float, pfun);
     else if (symbolp(form)) { if (form->name != sym(NOTHING)) printsymbol(form, pfun); }
+    else if (bfunctionp(form)) {
+        pfstring("<built-in ", pfun);
+        switch (fntype(getminmax(builtin(form->name)))) {
+            case FUNCTIONS: pfstring("function ", pfun); break;
+            case SPECIAL_FORMS: pfstring("special form ", pfun); break;
+        }
+        printsymbol(form, pfun);
+        pfun('>');
+    }
     else if (characterp(form)) pcharacter(form->chars, pfun);
     else if (stringp(form)) printstring(form, pfun);
     else if (arrayp(form)) printarray(form, pfun);
