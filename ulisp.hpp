@@ -103,7 +103,7 @@ Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, MOSI, SCK, TFT_RST);
 #define tstflag(x)         (Flags & 1<<(x))
 
 #define issp(x)            (x == ' ' || x == '\n' || x == '\r' || x == '\t')
-#define isbr(x)            (x == ')' || x == '(' || x == '"' || x == '#')
+#define isbr(x)            (x == ')' || x == '(' || x == '"' || x == '#' || x == '\'')
 #define longsymbolp(x)     longnamep((x)->name)
 #define longnamep(x)       (((x) & 0x03) == 0)
 #define arraysize(x)       (sizeof(x) / sizeof(x[0]))
