@@ -1805,11 +1805,13 @@ object* apply (object* function, object* args, object* env) {
     }
     if (consp(function) && isbuiltin(car(function), LAMBDA)) {
         object* result = closure(false, sym(NIL), function, args, &env);
+        clrflag(TAILCALL);
         return eval(result, env);
     }
     if (consp(function) && isbuiltin(car(function), CLOSURE)) {
         function = cdr(function);
         object* result = closure(false, sym(NIL), function, args, &env);
+        clrflag(TAILCALL);
         return eval(result, env);
     }
     error("illegal function", function);
@@ -6045,7 +6047,8 @@ object* macroexpand1 (object* form, object* env, bool* done) {
     }
     while (symbolp(car(form))) form = cons(cdr(findvalue(car(form), env)), cdr(form));
     protect(form);
-    form = closure(0, sym(NIL), car(form), cdr(form), &env);
+    form = closure(false, sym(NIL), car(form), cdr(form), &env);
+    clrflag(TAILCALL);
     object* result = eval(form, env);
     unprotect();
     return result;
@@ -7419,6 +7422,7 @@ object* eval (object* form, object* env) {
 
         if (isbuiltin(car(function), LAMBDA)) {
             form = closure(old_tailcall, name, function, args, &env);
+            clrflag(TAILCALL);
             unprotect();
             int trace = tracing(fname->name);
             if (trace) {
@@ -7439,6 +7443,7 @@ object* eval (object* form, object* env) {
             function = cdr(function);
             form = closure(old_tailcall, name, function, args, &env);
             unprotect();
+            clrflag(TAILCALL);
             tailcall = true;
             goto EVAL;
         }
