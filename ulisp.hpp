@@ -4934,11 +4934,11 @@ object* fn_cls (object* args, object* env) {
 object* fn_pinmode (object* args, object* env) {
     (void) env; int pin;
     object* arg = first(args);
-    if (keywordp(arg)) pin = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pin = checkkeyword(arg);
     else pin = checkinteger(first(args));
     int pm = INPUT;
     arg = second(args);
-    if (keywordp(arg)) pm = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pm = checkkeyword(arg);
     else if (integerp(arg)) {
         int mode = arg->integer;
         if (mode == 1) pm = OUTPUT; else if (mode == 2) pm = INPUT_PULLUP;
@@ -4958,7 +4958,7 @@ object* fn_digitalread (object* args, object* env) {
     (void) env;
     int pin;
     object* arg = first(args);
-    if (keywordp(arg)) pin = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pin = checkkeyword(arg);
     else pin = checkinteger(arg);
     if (digitalRead(pin) != 0) return tee; else return nil;
 }
@@ -4971,11 +4971,11 @@ object* fn_digitalwrite (object* args, object* env) {
     (void) env;
     int pin;
     object* arg = first(args);
-    if (keywordp(arg)) pin = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pin = checkkeyword(arg);
     else pin = checkinteger(arg);
     arg = second(args);
     int mode;
-    if (keywordp(arg)) mode = checkkeyword(arg);
+    if (builtin_keywordp(arg)) mode = checkkeyword(arg);
     else if (integerp(arg)) mode = arg->integer ? HIGH : LOW;
     else mode = (arg != nil) ? HIGH : LOW;
     digitalWrite(pin, mode);
@@ -4990,7 +4990,7 @@ object* fn_analogread (object* args, object* env) {
     (void) env;
     int pin;
     object* arg = first(args);
-    if (keywordp(arg)) pin = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pin = checkkeyword(arg);
     else {
         pin = checkinteger(arg);
         checkanalogread(pin);
@@ -5018,7 +5018,7 @@ object* fn_analogwrite (object* args, object* env) {
     (void) env;
     int pin;
     object* arg = first(args);
-    if (keywordp(arg)) pin = checkkeyword(arg);
+    if (builtin_keywordp(arg)) pin = checkkeyword(arg);
     else pin = checkinteger(arg);
     checkanalogwrite(pin);
     object* value = second(args);
@@ -5098,7 +5098,7 @@ object* fn_register (object* args, object* env) {
     (void) env;
     object* arg = first(args);
     int addr;
-    if (keywordp(arg)) addr = checkkeyword(arg);
+    if (builtin_keywordp(arg)) addr = checkkeyword(arg);
     else addr = checkinteger(first(args));
     if (cdr(args) == NULL) return number(*(uint32_t *)addr);
     (*(uint32_t *)addr) = checkinteger(second(args));
