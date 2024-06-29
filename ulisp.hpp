@@ -7296,8 +7296,10 @@ object* eval (object* form, object* env) {
         // special symbol macro handling
         else if (builtinp(name)) {
             builtin_t bname = builtin(name);
-            if (fntype(getminmax(bname)) == SPECIAL_SYMBOLS) return ((fn_ptr_type)lookupfn(bname))(NULL, env);
-            return bfunction_from_symbol(form);
+            uint8_t ft = fntype(getminmax(bname));
+            if (ft == SPECIAL_SYMBOLS) return ((fn_ptr_type)lookupfn(bname))(NULL, env);
+            else if (ft == OTHER_FORMS) return form;
+            else return bfunction_from_symbol(form);
         }
         Context = NIL;
         error("undefined", form);
