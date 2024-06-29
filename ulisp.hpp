@@ -7397,7 +7397,6 @@ object* eval (object* form, object* env) {
     }
     if (bfunctionp(function)) {
         builtin_t bname = builtin(function->name);
-        if (!builtinp(function->name)) error("can't call a symbol", function);
         Context = bname;
         checkminmax(bname, nargs);
         object* result = ((fn_ptr_type)lookupfn(bname))(args, env);
