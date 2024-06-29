@@ -12,7 +12,7 @@
 // Compile options
 
 #define printfreespace
-#define printgcs
+// #define printgcs
 #define sdcardsupport
 // #define gfxsupport
 // #define lisplibrary
