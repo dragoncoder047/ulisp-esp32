@@ -807,7 +807,7 @@ def test():
     for line in TESTS.split("\n"):
         if line and line.startswith("("):
             text = talk(line, port)
-            if "Error:" in text:
+            if "Error:" in text or "Error in" in text:
                 talk("(incf crashes)", port)
 
 test()

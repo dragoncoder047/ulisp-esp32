@@ -1101,7 +1101,7 @@ int intpower (int base, int exp) {
     testargument - handles the :test argument for functions that accept it
 */
 object* testargument (object* args) {
-    object* test = bsymbol(EQ);
+    object* test = bfunction_from_symbol(bsymbol(EQ));
     if (args != NULL) {
         if (cdr(args) == NULL) error("dangling keyword", first(args));
         if (isbuiltin(first(args), TEST)) test = second(args);
@@ -1795,7 +1795,8 @@ object* closure (bool tc, symbol_t name, object* function, object* args, object*
 }
 
 object* apply (object* function, object* args, object* env) {
-    if (symbolp(function)) {
+    if (symbolp(function)) error("can't call a symbol", function);
+    if (bfunctionp(function)) {
         builtin_t fname = builtin(function->name);
         if ((fname < ENDFUNCTIONS) && (fntype(getminmax(fname)) == FUNCTIONS)) {
             Context = fname;
@@ -7001,8 +7002,8 @@ const tbl_entry_t BuiltinTable[] = {
     { stringcopylist, fn_copylist, MINMAX(FUNCTIONS, 1, 1), doccopylist },
     { string86, fn_makearray, MINMAX(FUNCTIONS, 1, 5), doc86 },
     { string87, fn_reverse, MINMAX(FUNCTIONS, 1, 1), doc87 },
-    { string88, fn_assoc, MINMAX(FUNCTIONS, 2, 2), doc88 },
-    { string89, fn_member, MINMAX(FUNCTIONS, 2, 2), doc89 },
+    { string88, fn_assoc, MINMAX(FUNCTIONS, 2, 4), doc88 },
+    { string89, fn_member, MINMAX(FUNCTIONS, 2, 4), doc89 },
     { string90, fn_apply, MINMAX(FUNCTIONS, 2, UNLIMITED), doc90 },
     { string91, fn_funcall, MINMAX(FUNCTIONS, 1, UNLIMITED), doc91 },
     { string93, fn_mapc, MINMAX(FUNCTIONS, 2, UNLIMITED), doc93 },
