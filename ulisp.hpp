@@ -8003,7 +8003,7 @@ void repl (object* env) {
             pfstring(" : ", pserial);
             pint(BreakLevel, pserial);
         }
-        pfstring("[Ready.]\n", pserial);
+        pfstring("[Ready.]\n> ", pserial);
         Context = NIL;
         object* line = read(gserial);
         if (BreakLevel && line == nil) { pln(pserial); return; }
@@ -8012,6 +8012,7 @@ void repl (object* env) {
         pfl(pserial);
         line = eval(line, env);
         pfl(pserial);
+        pfstring("\n=> ", pserial);
         printobject(line, pserial);
         unprotect();
         pfl(pserial);
