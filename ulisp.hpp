@@ -4672,16 +4672,6 @@ object* fn_eval (object* args, object* env) {
 }
 
 /*
-    (return [value])
-    Exits from a (dotimes ...), (dolist ...), or (loop ...) loop construct and returns value.
-*/
-object *fn_return (object *args, object *env) {
-    (void) env;
-    setflag(RETURNFLAG);
-    if (args == NULL) return nil; else return first(args);
-}
-
-/*
     (globals)
     Returns a list of global variables.
 */
