@@ -2524,10 +2524,9 @@ object* sp_loop (object* args, object* env) {
     (return [value])
     Exits from a (dotimes ...), (dolist ...), or (loop ...) loop construct and returns value.
 */
-object* sp_return (object* args, object* env) {
-    object* result = progn_no_tc(args, env);
+object* fn_return (object* args, object* env) {
     setflag(RETURNFLAG);
-    return result;
+    return args ? first(args) : nil;
 }
 
 /*
@@ -6955,7 +6954,7 @@ const tbl_entry_t BuiltinTable[] = {
     { string28, sp_or, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc28 },
     { string29, sp_setq, MINMAX(SPECIAL_FORMS, 2, UNLIMITED), doc29 },
     { string30, sp_loop, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc30 },
-    { string31, sp_return, MINMAX(SPECIAL_FORMS, 0, UNLIMITED), doc31 },
+    { string31, fn_return, MINMAX(FUNCTIONS, 0, 1), doc31 },
     { string32, sp_push, MINMAX(SPECIAL_FORMS, 2, 2), doc32 },
     { string33, sp_pop, MINMAX(SPECIAL_FORMS, 1, 1), doc33 },
     { string34, sp_incf, MINMAX(SPECIAL_FORMS, 1, 2), doc34 },
