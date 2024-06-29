@@ -6229,7 +6229,7 @@ const char string145[] = "string<";
 const char string146[] = "string>";
 const char stringstringnoteq[] = "string/=";
 const char stringstringlesseq[] = "string<=";
-const char stringstringgteq[] = "string?=";
+const char stringstringgteq[] = "string>=";
 const char string147[] = "sort";
 const char string148[] = "concatenate";
 const char string149[] = "subseq";
