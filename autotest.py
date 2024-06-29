@@ -6,9 +6,10 @@ import sys
 
 TESTS = r"""
 
-(defvar ers 0)
+(defvar errors 0)
+(defvar crashes 0)
 
-(defun aeq (tst x y) (unless (or (and (floatp x) (floatp y) (< (abs (- x y)) 0.000005)) (equal x y)) (incf ers) (format t "~a=~a/~a~%" tst x y)))
+(defun aeq (testname x y) (unless (or (and (floatp x) (floatp y) (< (abs (- x y)) 0.000005)) (equal x y)) (incf errors) (format t "~a=~a/~a~%" testname x y)))
 
 #| Symbols |#
 
@@ -782,7 +783,8 @@ TESTS = r"""
 
 #| errors |#
 
-(aeq 'errors 0 ers)
+(format t "~%~a errors, ~a crashes~%" errors crashes)
+
 """
 
 
@@ -790,7 +792,9 @@ def talk(string, port, ttw=0.1):
     port.reset_output_buffer()
     port.write(string.encode())
     time.sleep(ttw)
-    sys.stdout.write(port.read(port.in_waiting).decode().replace("\r\n", "\n"))
+    text = port.read(port.in_waiting).decode().replace("\r\n", "\n")
+    sys.stdout.write(text)
+    return text
 
 
 def test():
@@ -802,7 +806,9 @@ def test():
 
     for line in TESTS.split("\n"):
         if line and line.startswith("("):
-            talk(line, port)
+            text = talk(line, port)
+            if "Error:" in text:
+                talk("(incf crashes)", port)
 
 test()
 
