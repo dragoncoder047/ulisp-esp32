@@ -6,10 +6,18 @@ import sys
 
 TESTS = r"""
 
-(defvar errors 0)
+(defvar errors nil)
 (defvar crashes 0)
 
-(defun aeq (testname x y) (unless (or (and (floatp x) (floatp y) (< (abs (- x y)) 0.000005)) (equal x y)) (incf errors) (format t "~a=~a/~a~%" testname x y)))
+(defun aeq (testname x y)
+    (unless (or (and (floatp x)
+                     (floatp y)
+                     (< (abs (- x y)) 0.000005))
+                (equal x y))
+        (let (b (assoc testname errors))
+            (if b (incf (cdr b))
+                  (push (cons testname 1) errors)))
+        (format t "~a fail: expected ~a, got ~a~%" testname x y)))
 
 #| Symbols |#
 
@@ -23,10 +31,10 @@ TESTS = r"""
 (aeq 'let 88 (let ((abcdefgh 88)) abcdefgh))
 (aeq 'let 99 (let ((abcdefghi 99)) abcdefghi))
 (aeq 'let 1010 (let ((abcdefghij 1010)) abcdefghij))
-(aeq 'let "ab9" (princ-to-string 'ab9))
-(aeq 'let t (eq 'me 'me))
-(aeq 'let t (eq 'fishcake 'fishcake))
-(aeq 'let nil (eq 'fishcak 'fishca))
+(aeq 'princ-to-string "ab9" (princ-to-string 'ab9))
+(aeq 'eq t (eq 'me 'me))
+(aeq 'eq t (eq 'fishcake 'fishcake))
+(aeq 'eq nil (eq 'fishcak 'fishca))
 
 #| Arithmetic |#
 
@@ -783,12 +791,12 @@ TESTS = r"""
 
 #| errors |#
 
-(format t "~%~a errors, ~a crashes~%" errors crashes)
+(format t "~%Failing tests:~%~{~a~%~}~%~a tests crashed." errors crashes)
 
 """
 
 
-def talk(string, port, ttw=0.1):
+def talk(string: str, port: serial.Serial, ttw: float = 0.1):
     port.reset_output_buffer()
     port.write(string.encode())
     time.sleep(ttw)
@@ -810,5 +818,5 @@ def test():
             if "Error:" in text or "Error in" in text:
                 talk("(incf crashes)", port)
 
-test()
 
+test()
