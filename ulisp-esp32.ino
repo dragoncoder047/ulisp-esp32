@@ -4,11 +4,6 @@
    Licensed under the MIT license: https://opensource.org/licenses/MIT
 */
 
-#include <ESP32Servo.h>
-#include <analogWrite.h>
-#include <ESP32Tone.h>
-#include <ESP32PWM.h>
-
 // Compile options
 
 #define printfreespace
@@ -23,11 +18,12 @@
 #include "bignums.hpp"
 
 const char foo[] =
-"(defvar *loaded* nil)"
-"(defun load(filename)(if(null(search(list filename)*loaded*))(with-sd-card(f filename)(push filename *loaded*)(loop(let((form(read f)))(unless form(return))(eval form))))))"
-"(load \"main.lisp\")"
-"(princ \"main.lisp returned, entering REPL...\")"
-;
+  "(pinmode 13 :output)(dotimes(_ 4)(digitalwrite 13 :high)(delay 75)(digitalwrite 13 :low)(delay 75))"
+  "(defvar *loaded* nil)"
+  "(defun load(filename)(if(null(search(list filename)*loaded*))(with-sd-card(f filename)(push filename *loaded*)(loop(let((form(read f)))(unless form(return))(eval form))))))"
+  "(if(eq'nothing(ignore-errors(load\"main.lisp\")'a))"
+  "(progn(princ\"Error trying to run main.lisp\")(neopixel#xff0000)))"
+  "(progn(princ\"main.lisp returned, entering REPL...\")(neopixel#x0000ff))";
 const size_t foolen = arraysize(foo);
 size_t fooi = 0;
 int getfoo() {
@@ -45,11 +41,11 @@ int getfoo() {
 /*
     sdmain - Run main.lisp on startup
 */
-void sdmain () {
+void sdmain() {
     SD.begin();
     if (setjmp(toplevel_handler)) return;
     object* fooform;
-    for(;;) {
+    for (;;) {
         fooform = read(getfoo);
         if (fooform == NULL) return;
         protect(fooform);
@@ -61,10 +57,12 @@ void sdmain () {
 /*
     setup - entry point from the Arduino IDE
 */
-void setup () {
+void setup() {
     Serial.begin(115200);
     int start = millis();
-    while ((millis() - start) < 5000) { if (Serial) break; }
+    while ((millis() - start) < 5000) {
+        if (Serial) break;
+    }
     ulispinit();
     addtable(ExtensionsTable);
     addtable(BignumsTable);
@@ -75,9 +73,9 @@ void setup () {
 /*
     loop - the Arduino IDE main execution loop
 */
-void loop () {
+void loop() {
     if (!setjmp(toplevel_handler)) {
-        ; // noop
+        ;  // noop
     }
     ulisperrcleanup();
     repl(NULL);
